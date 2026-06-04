@@ -25,6 +25,7 @@
     "slicc-handoff": { "path": "skills/slicc-handoff/SKILL.md" },
     "testing-blocks": { "path": "skills/testing-blocks/SKILL.md" },
     "ue-component-model": { "path": "skills/ue-component-model/SKILL.md" },
-    "customer-pov": { "path": "skills/customer-pov/SKILL.md" }
+    "customer-pov": { "path": "skills/customer-pov/SKILL.md" },
+    "migration-score": { "path": "skills/migration-score/SKILL.md" }
   }
 }

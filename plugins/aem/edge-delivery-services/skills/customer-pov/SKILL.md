@@ -49,13 +49,12 @@ For any result whose filename matches one of the five files below, read it using
 | File | URI | Key Fields |
 |---|---|---|
 | **PBYB-Pipeline-M2C.xlsx** | `file:///b!Vvl0MrjkUU6qaZPj68wqWnr-jUVAFJpOuXYGxzuN5XwD58L2T2zXTZ-ervjN3gfr/013XBSETG63WHRBE5I5JDLA6E4XQOKHIBW` | M2EDS readiness, Current Sites ARR, Renewal End Date, GNARR Potential, FLM Team, Wave (Priority/1/2/3), DR numbers, Notes from FLM |
-| **EDS Migration Assessment.xlsx** | `file:///b!Vvl0MrjkUU6qaZPj68wqWnr-jUVAFJpOuXYGxzuN5XwD58L2T2zXTZ-ervjN3gfr/013XBSETENUG5MYQSDBNCYUFWALA6XPDND` | EDS Migration Score (0–100), LLM Visibility Score (0–100), EDS Assessment Rationale, LLM Visibility Rationale |
+| **EDS Migration Assessment.xlsx** | `file:///b!Vvl0MrjkUU6qaZPj68wqWnr-jUVAFJpOuXYGxzuN5XwD58L2T2zXTZ-ervjN3gfr/013XBSETENUG5MYQSDBNCYUFWALA6XPDND` | LLM Visibility Score (0–100), LLM Visibility Rationale |
 | **M2C Candidate Data - Full List.xlsx** | `file:///b!Vvl0MrjkUU6qaZPj68wqWnr-jUVAFJpOuXYGxzuN5XwD58L2T2zXTZ-ervjN3gfr/013XBSETA3ZL4QSSDW2NGLAHJJFNZVA2Z5` | Priority Score (0–4), ARR, Open Pipeline, Renewal Quarter, Products (SITES/ASSETS/FORMS), Region (FSI/HTM/CMT/HLS/CANADA/RCG), Has Sites, Whitespace tier |
 | **EDS OnPrem Customers.xlsx** | `file:///b!Vvl0MrjkUU6qaZPj68wqWnr-jUVAFJpOuXYGxzuN5XwD58L2T2zXTZ-ervjN3gfr/013XBSETGMBLJXLS5MAZA3PVRXSPDKVZGR` | Confirmed On-Prem AEM customer, Website, DR IDs |
 | **AI Visibility Renewals May 2026 - 20260519-1107.xlsx** | `file:///b!Vvl0MrjkUU6qaZPj68wqWnr-jUVAFJpOuXYGxzuN5XwD58L2T2zXTZ-ervjN3gfr/013XBSETF7HFFGAI4HJVG2ZYMQVQKURXDA` | AI Visibility report data for this account |
 
 **Interpreting the scores:**
-- **EDS Migration Score** — Technical suitability for EDS. 70+ = strong candidate; 50–69 = moderate with caveats; <50 = significant headwinds (data-heavy or highly transactional sites).
 - **LLM Visibility Score** — How well the customer's content surfaces in AI-generated answers. Lower = stronger argument for EDS + AI Visibility improvements.
 - **M2EDS** — Sales team readiness. "Yes" = aligned; "Maybe/Possible" = needs nurturing; "No" = blocked.
 - **Priority Score** — 0 = top priority (actively worked), 1 = high, 2 = medium, 3 = low, 4 = lowest.
@@ -64,8 +63,7 @@ For any result whose filename matches one of the five files below, read it using
 **If the customer is found**, use this data to:
 1. Pre-populate the Customer Snapshot fields (ARR, renewal date, products, region vertical)
 2. Tailor the Executive Summary to their specific readiness level and renewal timeline
-3. Cite the EDS Migration Score and rationale verbatim in "Current State Assessment"
-4. Reference GNARR potential and renewal date when framing urgency in "Recommended Next Steps"
+3. Reference GNARR potential and renewal date when framing urgency in "Recommended Next Steps"
 5. Use the LLM Visibility Rationale to explain AI Visibility gaps — this is a powerful secondary hook
 6. Note the FLM team name for internal context (omit from any customer-facing output)
 
@@ -177,11 +175,17 @@ node .claude/skills/docs-search/scripts/search.js migration
 
 ### 2e — Migration Scope Estimation (Page Count & Block Inventory)
 
-Use the existing skills under `skills/plugins/aem/edge-delivery-services/skills/` to estimate the migration effort in concrete terms: how many pages and how many unique EDS blocks the customer's website would require.
+Use the existing skills under `skills/plugins/aem/edge-delivery-services/skills/` to estimate the migration effort in concrete terms: how many pages and how many unique EDS blocks the customer's website would require. Step 7 delegates scoring and timeline estimation to the **migration-score** skill.
 
-#### Step 1 — Discover the Customer's Primary Domain
+#### Step 1 — Identify the Scope URL
 
-Use the domain found in external research (Step 2c). If multiple domains exist (brands, locales, microsites), list them all and focus the estimation on the primary production domain.
+Before proceeding, ask the user:
+
+> **What URL should I scope the migration analysis against?**
+> This will be used to fetch the sitemap, sample pages, and run the block inventory.
+> (e.g., `https://www.example.com`, `https://brand.example.com/products/`)
+
+Wait for the user to provide a URL before continuing. If the user does not provide one and asks you to infer it, use the primary domain found in external research (Step 2c). If multiple domains exist (brands, locales, microsites), note them all and confirm with the user which one to focus on.
 
 #### Step 2 — Estimate Total Page Count
 
@@ -221,6 +225,74 @@ node .claude/skills/scrape-webpage/scripts/analyze-webpage.js "<page-url>" --out
 
 For each scraped page, run the **identify-page-structure** skill (which internally invokes **page-decomposition** per section) to identify content sequences and candidate block types. Collect the block type assigned to each sequence across all sampled pages.
 
+#### Step 4b — Detect Service-Endpoint-Driven Content
+
+For each sampled page, inspect the scraped output to identify any sections whose content is loaded dynamically from a service endpoint rather than baked into the HTML at render time. This is one of the most migration-critical signals — EDS is a static-first delivery model, so API-driven components require an explicit architectural decision.
+
+**Signals to look for in the scraped page source:**
+
+```bash
+# XHR / fetch calls in inline or linked scripts
+grep -Ei "(fetch\(|XMLHttpRequest|axios\.|\.get\(|\.post\()" /tmp/customer-pov/scope/<page-slug>*
+
+# REST / GraphQL endpoint patterns
+grep -Ei "(api\.|/api/|/v[0-9]+/|graphql|\.json\?|service\.)" /tmp/customer-pov/scope/<page-slug>*
+
+# Data attributes that reference endpoint URLs
+grep -Ei 'data-(src|url|endpoint|feed|config|api)=' /tmp/customer-pov/scope/<page-slug>*
+
+# Script tags loading remote data configs
+grep -Ei '<script[^>]+(src|data-).*\.(json|js)\?' /tmp/customer-pov/scope/<page-slug>*
+
+# Common SPA / hydration markers
+grep -Ei '(window\.__INITIAL_STATE__|__NEXT_DATA__|window\.__APP_DATA__|ng-app|data-react-root|v-app)' /tmp/customer-pov/scope/<page-slug>*
+```
+
+Also use the WebFetch tool to load each sampled page in a browser-rendered context and inspect the Network tab equivalent for any XHR/fetch calls fired on load (check for `<script type="application/json">` or embedded JSON blobs that act as client-side data seeds).
+
+**For each service-endpoint-driven element found, record:**
+
+| Element / Section | Endpoint URL or Pattern | Data Type | Rendering Model | Pages Affected |
+|---|---|---|---|---|
+| (e.g., Product price widget) | `/api/v2/products/{sku}/price` | REST JSON | Client-side JS | Product detail pages |
+| (e.g., News feed) | `https://feeds.example.com/news.json` | JSON feed | Client-side JS | Homepage, hub pages |
+| (e.g., Store locator map) | `https://maps.googleapis.com/...` | Third-party API | Client-side JS | Contact / Locations |
+| (e.g., Personalized hero) | `/api/segments/user` | REST JSON | Client-side JS + cookie | Homepage |
+
+**Migration recommendation for each detected pattern:**
+
+For each endpoint-driven element, apply the following decision tree and write a tailored recommendation in the POV:
+
+1. **Static / cacheable data (product catalog, news feed, store list, pricing tiers)**
+   - **Recommendation:** Replace with an EDS block that fetches the endpoint via `fetch()` inside the block's `decorate(block)` function at page-load time. Data is fetched client-side; no server infrastructure changes needed. For high-volume, low-change data (e.g., store lists), consider publishing a `query-index.json` or a pre-built JSON file to the EDS content bus and fetching that instead of the live API — eliminates CORS concerns and improves performance.
+   - **EDS pattern:** `decorate(block)` → `const data = await fetch('<endpoint>').then(r => r.json())` → render DOM from data.
+
+2. **Real-time / user-specific data (personalized content, live inventory, pricing based on auth)**
+   - **Recommendation:** Separate the static shell (markup, layout) from the dynamic payload. Deliver the static shell via EDS, then hydrate with a dedicated EDS block that calls the live endpoint post-render. Authenticated API calls should be proxied through a lightweight edge function (e.g., Cloudflare Worker, AWS Lambda@Edge, or Adobe App Builder action) to avoid exposing credentials in client JS and to handle CORS.
+   - **EDS pattern:** Static hero/card markup in document → `decorate(block)` fetches personalization endpoint → swap text/image nodes on response.
+
+3. **Third-party widget or embedded service (maps, chatbot, reviews, video, A/B testing)**
+   - **Recommendation:** Wrap the third-party embed in a named EDS block. The block's `decorate()` function injects the vendor script and initializes the widget. This keeps the document clean (just a table cell with the embed type and config params) and lets the block control lazy-loading and consent gating.
+   - **EDS pattern:** Document table → `| maps |` → `| <lat,lng> |` → block injects Google Maps script and renders.
+
+4. **SPA / fully client-rendered sections (React, Angular, Vue app shells)**
+   - **Recommendation:** Flag as **high migration complexity**. A fully client-rendered section embedded in the page cannot be trivially ported to EDS without re-implementing the component in plain JS or accepting a sub-100 Lighthouse score for that section. Recommend a phased approach: migrate static pages first; negotiate a hybrid coexistence strategy for the SPA section (keep it as an iframe or a separately deployed micro-frontend served from a subdomain) while planning a longer-term re-implementation as a native EDS block.
+   - **Migration risk:** High. Estimate separately from static block count.
+
+5. **Server-side rendered partials injected by the CMS (AEM Sling includes, HTL components, dispatcher ESI)**
+   - **Recommendation:** Map each Sling component or HTL template to an equivalent EDS block. Content that was previously assembled on the server must be either authored directly in the document (preferred) or fetched by a block from a headless AEM endpoint (AEM Content Fragments API, Assets Delivery API, or a custom Sling servlet). Evaluate whether the data can be flattened into the document at authoring time — if so, no runtime fetch is needed at all.
+   - **EDS pattern:** AEM Content Fragment → EDS block fetches `/api/content-fragments/<path>.json` → renders in page.
+
+**Summarize findings** as an addendum to the Block Inventory (Step 5):
+
+| Endpoint-Driven Component | Migration Pattern | Complexity | Notes |
+|---|---|---|---|
+| | Static fetch / query-index | Low | |
+| | Client-side fetch + edge proxy | Medium | |
+| | Third-party widget wrapper | Low–Medium | |
+| | SPA shell re-implementation | High | Scope separately |
+| | AEM headless / CF API | Medium | |
+
 #### Step 5 — Check Block Collection Coverage
 
 Run the **block-inventory** skill against the unique block types identified in Step 4:
@@ -241,7 +313,38 @@ Extrapolate from the sampled pages to estimate totals:
 - **Unique block types needed** = distinct block types across all sampled pages (deduplicated)
 - **Custom blocks to build** = unique blocks not covered by Block Collection
 - **Pages per template type** = use sitemap URL pattern distribution to weight the estimate
-- **Migration complexity** = classify as Low / Medium / High based on custom block ratio and total page count
+
+#### Step 7 — Compute Migration Score and Timeline
+
+Invoke the **migration-score** skill, passing the following inputs collected in Steps 2–6:
+
+**Block inventory inputs:**
+- `blocks_adopt` — count of blocks covered by Block Collection, usable as-is
+- `blocks_customize` — count of blocks needing minor customization
+- `blocks_custom` — count of net-new custom blocks
+- `blocks_service_simple` — count of service-endpoint blocks using static fetch / query-index
+- `blocks_service_complex` — count of service-endpoint blocks requiring auth or edge proxy
+- `blocks_spa` — count of SPA sections requiring full re-implementation
+
+**Site metric inputs:**
+- `total_pages` — from Step 2
+- `template_count` — from Step 2
+
+**Risk modifier inputs** (set based on customer context gathered in Steps 2a–2c):
+- `locale_count` — number of languages / locales on the site
+- `has_auth_personalization` — true if auth-gated or personalized content spans many page types
+- `has_formal_qa` — true if the customer has a formal, gated UAT / QA process
+- `already_uses_docs` — true if the customer already authors in Google Docs or SharePoint
+- `dominant_template` — true if ≥ 50% of pages share a single template
+
+The **migration-score** skill will return:
+- Migration Score (0–100) with label
+- Complexity rating (Low / Medium / High / Very High)
+- Adjusted effort estimate (developer-days)
+- Phase timeline table (Phase 0 POC / Phase 1 Pilot / Phase 2 Scaled Migration)
+- Assumptions & adjustments applied
+
+Use this structured output to populate the **Migration Scope Estimate** section of the POV document (Step 3).
 
 Clean up scratch files after analysis:
 ```bash
@@ -298,7 +401,6 @@ Prepared: <today's date>  |  Prepared by: Adobe Solution Consulting
 | AEM Products in Use | (SITES / ASSETS / FORMS — from M2C Candidate Data) |
 | Current AEM ARR | (from PBYB-Pipeline-M2C or M2C Candidate Data) |
 | Renewal Date | (from PBYB-Pipeline-M2C) |
-| EDS Migration Score | (0–100 — from EDS Migration Assessment.xlsx; include rationale summary) |
 | LLM Visibility Score | (0–100 — from EDS Migration Assessment.xlsx; include rationale summary) |
 | M2EDS Readiness | (Yes / Maybe / Possible / No — from PBYB-Pipeline-M2C) |
 | Pipeline Wave | (Priority / Wave 1 / Wave 2 / Wave 3 — from PBYB-Pipeline-M2C) |
@@ -377,6 +479,22 @@ _Based on sitemap analysis and representative page sampling using the EDS scrape
 | Require customization of an existing block | |
 | Net-new custom blocks to build | |
 
+### Service-Endpoint-Driven Components
+
+_Elements whose content is loaded dynamically from an API or service endpoint at runtime — each requires an explicit EDS migration pattern decision._
+
+| Component | Endpoint / Pattern | Migration Pattern | Complexity |
+|---|---|---|---|
+| | | Static fetch / query-index | Low |
+| | | Client-side fetch + edge proxy | Medium |
+| | | Third-party widget wrapper | Low–Medium |
+| | | SPA re-implementation | High |
+| | | AEM headless / CF API | Medium |
+
+_(Remove rows for which no service-endpoint-driven content was found. If none detected, replace the table with: "No service-endpoint-driven content detected on sampled pages.")_
+
+**Recommendations:** _(For each row above, provide 1–2 sentences describing the specific EDS block pattern, any CORS or auth considerations, and whether the endpoint can be replaced by a query-index.json or authored data in the document.)_
+
 ### Migration Complexity
 
 **Rating:** Low / Medium / High _(select one and delete the others)_
@@ -386,9 +504,26 @@ _Based on sitemap analysis and representative page sampling using the EDS scrape
 | Custom block ratio | (custom blocks / total unique blocks) |
 | Total page volume | |
 | Page template diversity | |
+| Service-endpoint-driven components | (count; note any SPA or auth-gated endpoints as high-complexity drivers) |
 | Content freshness / ongoing publishing cadence | |
 
 [2–3 sentences summarizing the migration complexity. Call out the specific blocks or page types that drive the most effort. Note any patterns (e.g., heavy use of interactive components, gated content, or localized pages) that would affect phasing.]
+
+### Migration Timeline Estimate
+
+_Derived from page count, block inventory, service-endpoint findings, and complexity rating above. See Step 2e / Step 7 for methodology._
+
+| Phase | Scope | Estimated Duration | Key Dependencies |
+|---|---|---|---|
+| **Phase 0 — POC** | 1 page, ~N blocks | N weeks | Block Collection availability, CDN / GitHub setup |
+| **Phase 1 — Pilot** | N pages, N new blocks | N weeks | Author training, CI/CD pipeline |
+| **Phase 2 — Scaled Migration** | N pages across N templates | N quarters | Content freeze windows, locale sign-off |
+| **SPA / Complex Components** _(if applicable)_ | List components | Separate workstream | Architecture decision required |
+| **Total (Phase 0 → full production)** | | **~N months** | |
+
+**Assumptions & adjustments applied:**
+
+_(List any multipliers applied — e.g., "+25% for 4 locales", "−15% because customer already authors in SharePoint", "SPA re-implementation scoped as a separate workstream".)_
 
 ---
 
@@ -555,10 +690,140 @@ After presenting the POV, offer the following options:
 
 1. **Refine a specific section** — "Would you like me to sharpen the executive summary, add more detail to the migration phases, or tailor the benefits to a specific stakeholder audience (e.g., CMO vs. CTO)?"
 2. **Add a competitor comparison** — "Would you like me to add a section comparing EDS to their current platform or a competitor CMS?"
-3. **Generate a slide outline** — "Would you like me to produce a 10-slide deck outline based on this POV for a customer presentation?"
+3. **Generate a PPTX presentation** — "Would you like me to produce a PowerPoint presentation based on this POV? I'll use the official Adobe EDS POV slide templates and populate them with the customer-specific content from this POV." _(See Step 5 for full instructions.)_
 4. **Identify reference customers** — "Shall I search internally for AEM EDS reference customers in this vertical?"
 
 After any refinement accepted by the user, overwrite the existing output file with the updated content using the Write tool (same path as Step 3). Confirm the update to the user.
+
+---
+
+## Step 5: Generate PPTX Presentation (When Requested)
+
+When the user asks to generate a PowerPoint / PPTX presentation, follow this process.
+
+### 5a — Fetch the Official PPTX Templates
+
+The approved slide template designs live in the `AEMNAMExpertSCs` SharePoint site at this folder:
+
+```
+https://adobe.sharepoint.com/:f:/s/AEMNAMExpertSCs/IgDY9TTZaRVSQZPdy3DC5f5gAdvOGvYQ97CAXuAC363JX2I?e=7UlYLz
+```
+
+Use the Microsoft 365 SharePoint folder search tool to list all files in this folder:
+
+```
+sharepoint_folder_search url: "https://adobe.sharepoint.com/:f:/s/AEMNAMExpertSCs/IgDY9TTZaRVSQZPdy3DC5f5gAdvOGvYQ97CAXuAC363JX2I?e=7UlYLz"
+```
+
+If the folder URL is not directly supported, fall back to:
+
+```
+sharepoint_search query: "POV template" fileType: "pptx" site: "AEMNAMExpertSCs"
+sharepoint_search query: "EDS POV" fileType: "pptx" site: "AEMNAMExpertSCs"
+sharepoint_search query: "customer POV template" fileType: "pptx"
+```
+
+From the results, identify the most relevant template file (prefer the one with the most recent modification date or the one whose name most closely matches a general-purpose POV or EDS template).
+
+### 5b — Download the Template
+
+Once you have identified the template file, download it to local storage using the download-first protocol from Step 2b:
+
+1. Check for a `downloadUrl` in the search result.
+2. If present:
+   ```bash
+   mkdir -p /tmp/customer-pov
+   curl -L -o "/tmp/customer-pov/pov-template.pptx" "<downloadUrl>"
+   ```
+3. If `downloadUrl` is null, apply the download recovery flow (re-query by exact filename) before asking the user to download manually.
+
+Verify the file downloaded successfully:
+```bash
+ls -lh /tmp/customer-pov/pov-template.pptx
+python3 -c "from pptx import Presentation; p = Presentation('/tmp/customer-pov/pov-template.pptx'); print(f'Slides: {len(p.slides)}, Layout: {p.slide_width} x {p.slide_height}')"
+```
+
+If the template cannot be downloaded after exhausting all recovery options, fall back to the customer-specific script in `<skill_dir>/scripts/` if one exists (e.g., `build_aws_pptx.py`), or generate the PPTX programmatically using the Adobe brand colors and layout conventions established in the existing scripts, and inform the user that the template could not be retrieved.
+
+### 5c — Inspect the Template Structure
+
+Before populating slides, introspect the downloaded template to understand its slide layouts and placeholder positions:
+
+```python
+from pptx import Presentation
+from pptx.util import Inches, Pt
+
+prs = Presentation('/tmp/customer-pov/pov-template.pptx')
+
+# Print all slide layouts
+for i, layout in enumerate(prs.slide_layouts):
+    print(f"Layout {i}: {layout.name}")
+    for ph in layout.placeholders:
+        print(f"  Placeholder {ph.placeholder_format.idx}: '{ph.name}' — type={ph.placeholder_format.type}")
+
+# Print all slides and their content
+for i, slide in enumerate(prs.slides):
+    print(f"\n--- Slide {i+1} ---")
+    for shape in slide.shapes:
+        if shape.has_text_frame:
+            print(f"  [{shape.name}]: {shape.text_frame.text[:120]!r}")
+```
+
+Record:
+- The layout indices for: title slide, section divider, content slide, table slide, and any "internal use only" layout.
+- Which placeholders (by index) map to title, subtitle, body, and footer.
+- The slide dimensions (width × height in EMUs) to preserve the template's aspect ratio.
+
+### 5d — Generate the Customer PPTX
+
+Write a Python script at `<skill_dir>/scripts/build_<customer-slug>_pptx.py` that:
+
+1. **Opens the downloaded template** — `Presentation('/tmp/customer-pov/pov-template.pptx')` — to inherit slide masters, fonts, color themes, and layout geometry exactly as designed.
+2. **Reuses existing slide layouts** from the template rather than adding new blank slides. Use `prs.slide_layouts[<layout_index>]` for each new slide.
+3. **Populates placeholders** by index (not by name) to match the template's layout, overriding only the text content.
+4. **Inserts a section divider slide before every major section** — use the section divider layout identified in Step 5c. Every section in the POV must be preceded by its own dedicated section slide. The required sections and their order are:
+   1. Cover (title slide — no section divider needed before this)
+   2. **Executive Summary** ← section divider slide, then content slide(s)
+   3. **Customer Snapshot** ← section divider slide, then content slide(s)
+   4. **Business Context & Strategic Priorities** ← section divider slide, then content slide(s)
+   5. **Current State Assessment** ← section divider slide, then content slide(s)
+   6. **Migration Scope Estimate** ← section divider slide, then content slide(s)
+   7. **The Opportunity: AEM EDS + Document Authoring** ← section divider slide, then content slide(s)
+   8. **Recommended Migration Approach** ← section divider slide, then content slide(s)
+   9. **Benefits Summary** ← section divider slide, then content slide(s)
+   10. **Risks & Mitigations** ← section divider slide, then content slide(s)
+   11. **Recommended Next Steps** ← section divider slide, then content slide(s)
+   12. **Account Status & Financial Considerations** ← section divider slide (marked INTERNAL), then content slide(s)
+   13. **Objection Handling** ← section divider slide (marked INTERNAL), then content slide(s)
+
+   For each section divider slide, set the section title text to the section name listed above. If the template's section divider layout has a subtitle placeholder, populate it with a one-line summary of that section's content.
+5. **Marks internal-only slides** (account financials, objection handling, and their section divider slides) with a visible "INTERNAL USE ONLY" badge using the template's designated internal layout if available, or a red-bordered text box if not.
+6. **Saves the output** to `<skill_dir>/output/<customer-slug>-pov-<YYYY-MM-DD>.pptx`.
+
+Run the script to produce the PPTX:
+
+```bash
+cd <workspace_root>
+python3 <skill_dir>/scripts/build_<customer-slug>_pptx.py
+```
+
+Verify the output file was created:
+```bash
+ls -lh <skill_dir>/output/<customer-slug>-pov-<YYYY-MM-DD>.pptx
+python3 -c "from pptx import Presentation; p = Presentation('<skill_dir>/output/<customer-slug>-pov-<YYYY-MM-DD>.pptx'); print(f'{len(p.slides)} slides generated')"
+```
+
+### 5e — Confirm and Clean Up
+
+Confirm the saved path to the user:
+
+> PPTX saved to `plugins/aem/edge-delivery-services/skills/customer-pov/output/<filename>.pptx`
+> Template used: `<template_filename>` (from AEMNAMExpertSCs SharePoint)
+
+Clean up the downloaded template:
+```bash
+rm -f /tmp/customer-pov/pov-template.pptx
+```
 
 ---
 
