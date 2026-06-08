@@ -287,7 +287,7 @@ raw_effort = block_effort + page_effort
 
 ## Step 7 — Apply Adjustment Factors
 
-Apply each matching modifier to `raw_effort`. Record every factor applied — it will appear in the output assumptions list.
+Apply each matching modifier to **both** `block_effort` and `page_effort` independently. Record every factor applied — it will appear in the output assumptions list.
 
 | Modifier | Condition | Adjustment |
 |---|---|---|
@@ -296,13 +296,17 @@ Apply each matching modifier to `raw_effort`. Record every factor applied — it
 | Formal QA / UAT gating | `has_formal_qa` is true | +15% |
 | Dominant single template | `dominant_template` is true | −10% |
 
-Apply all matching adjustments multiplicatively:
+Apply all matching adjustments multiplicatively to each component:
 
 ```
-adjusted_effort = raw_effort × (1 + adj_1) × (1 + adj_2) × ...
+adjustment_multiplier = (1 + adj_1) × (1 + adj_2) × ...
+
+adjusted_block_effort = block_effort × adjustment_multiplier
+adjusted_page_effort  = page_effort  × adjustment_multiplier
+adjusted_total_effort = adjusted_block_effort + adjusted_page_effort
 ```
 
-If no modifiers apply, `adjusted_effort = raw_effort`.
+If no modifiers apply, each component equals its raw value.
 
 ---
 
@@ -310,7 +314,7 @@ If no modifiers apply, `adjusted_effort = raw_effort`.
 
 The Migration Score is a normalized composite index — a single comparable number for stakeholder summaries. **Higher score = easier migration; lower score = more complex migration.** It supplements the timeline estimate; it does not replace it.
 
-Compute complexity penalty sub-scores, then subtract from 100.
+Compute complexity penalty sub-scores, then subtract from 100. Page volume is **not** included in the score — it drives effort and timeline estimates (Steps 6–9) but does not affect the score. Two sites with identical block complexity should score identically regardless of how many pages need migrating.
 
 **Block complexity penalty (0–60):**
 
@@ -323,17 +327,7 @@ Compute complexity penalty sub-scores, then subtract from 100.
 | Any ratio, 1–2 SPA blocks present | 50 |
 | Any ratio, 3+ SPA blocks present | 60 |
 
-**Page volume penalty (0–25):**
-
-| `total_pages` | Sub-score |
-|---|---|
-| < 50 | 5 |
-| 50–200 | 10 |
-| 201–500 | 15 |
-| 501–2000 | 20 |
-| > 2000 | 25 |
-
-**Risk modifier penalty (−5 to +15):**
+**Risk modifier penalty (0–15):**
 
 | Modifier | Points |
 |---|---|
@@ -342,7 +336,7 @@ Compute complexity penalty sub-scores, then subtract from 100.
 | `has_formal_qa` | +5 |
 
 ```
-complexity_penalty = clamp(block_sub + page_sub + risk_sub, 0, 100)
+complexity_penalty = clamp(block_sub + risk_sub, 0, 100)
 migration_score    = 100 − complexity_penalty
 ```
 
@@ -424,7 +418,9 @@ Produce the following structured result. When called standalone, save it to the 
 
 **Migration Ease:** Easy / Moderate / Hard / Very Hard
 
-**Adjusted Effort Estimate:** ~NN developer-days
+**Block Build Effort:** ~NN developer-days
+**Page Migration Effort:** ~NN developer-days
+**Total Adjusted Effort:** ~NN developer-days
 
 ---
 
