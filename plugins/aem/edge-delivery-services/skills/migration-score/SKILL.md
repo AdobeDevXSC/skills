@@ -471,6 +471,11 @@ After presenting the migration score output, offer the following options:
 1. **Refine the inputs** — "Would you like to adjust any block counts, page volumes, or risk modifiers and recompute the score?"
 2. **Drill into a phase** — "Would you like a more detailed breakdown of Phase 0 or Phase 1 scope and effort?"
 3. **Generate a PPTX presentation** — "Would you like me to produce a PowerPoint presentation of this migration assessment? I'll use the official Adobe EDS POV slide templates and populate them with the migration score, timeline, and assumptions." _(Invoke the `/generate-pptx` skill, passing the customer/project name and the migration score output generated above.)_
-4. **Feed into a full POV** — "Would you like to incorporate this migration score into a full customer POV? Run `/customer-pov` and this output will be used to populate the migration approach section."
+4. **Feed into a full POV** — "Would you like to incorporate this migration score into a full customer POV? I'll carry all of the migration score output into `/customer-pov` so the migration approach section is pre-populated with the actual score, block inventory, phase timeline, and assumptions — no re-entry needed."
+
+   When the user selects this option, invoke the `/customer-pov` skill and pass the **complete migration score output** as a named context block so customer-pov can use it verbatim. Specifically:
+   - Pass the customer URL (or customer name slug) so customer-pov does not need to re-ask.
+   - Pass the full structured output produced in Step 10 — Migration Score, Block Inventory Summary, Phase Timeline table, and Assumptions & Adjustments Applied — as `migration_score_output`.
+   - Tell customer-pov: **"Use the provided `migration_score_output` to populate the Recommended Migration Approach section. Do not generate new phase estimates — use the Phase Timeline table from the migration score exactly as produced. Embed the Migration Score, ease rating, adjusted effort, and block inventory summary in that section as well."**
 
 After any refinement accepted by the user, overwrite the existing output file with the updated content using the Write tool (same path as Step 10). Confirm the update to the user.

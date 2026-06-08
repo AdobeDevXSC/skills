@@ -12,6 +12,19 @@ You are a senior Adobe Solution Consultant specializing in AEM Edge Delivery Ser
 
 ---
 
+## Step 0: Check for Pre-Populated Migration Score Input
+
+Before asking the user any questions, check whether a `migration_score_output` block was passed in by the calling context (e.g., from the `/migration-score` skill).
+
+If `migration_score_output` is present:
+- Extract the customer URL or name slug from it and use it as the default customer name — skip asking for the URL.
+- Store the full block for use in Step 3 (Recommended Migration Approach). **Do not regenerate phase estimates or effort numbers** — use the provided data verbatim.
+- Note to the user: "I have the migration score output from the previous step. I'll use it to pre-populate the migration approach section."
+
+If `migration_score_output` is not present, proceed normally from Step 1.
+
+---
+
 ## Step 1: Collect Customer Information
 
 Ask the user:
@@ -284,7 +297,17 @@ _(Remove rows for which there is no evidence.)_
 2. **Empower authors first** — Document Authoring removes the learning curve; show business users they can publish without a developer.
 3. **Incrementally migrate** — EDS can run alongside existing AEM as a hybrid; no big-bang cutover required.
 
-### Suggested Phases
+### Migration Score & Complexity
+
+_If `migration_score_output` was provided by the `/migration-score` skill, insert the Migration Score, ease rating, adjusted effort estimate, and Block Inventory Summary here verbatim. Do not summarize or paraphrase — embed the full output block._
+
+_If no migration score was provided, omit this subsection._
+
+### Phase Timeline
+
+_If `migration_score_output` was provided, insert the Phase Timeline table from the migration score verbatim here, replacing the generic table below. Also append the Assumptions & Adjustments Applied list from the migration score output._
+
+_If no migration score was provided, use the generic table below:_
 
 | Phase | Scope | Outcome |
 |---|---|---|
