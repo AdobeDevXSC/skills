@@ -1,76 +1,218 @@
 ---
 name: migration-score
-description: Computes a structured AEM-to-EDS migration assessment from a block inventory. Takes block counts by complexity tier, page volume, and optional risk modifiers; produces a Migration Score (0–100, higher = easier migration), ease rating (Easy / Moderate / Hard / Very Hard), phased timeline estimate, and the set of adjustment factors applied. Designed to be called from orchestrator skills such as customer-pov and analyze-and-plan.
+description: Computes a structured AEM-to-EDS migration assessment by automatically analyzing a customer URL. Fetches the sitemap to measure page volume and locales, scrapes the homepage and sample pages to classify block complexity, then produces a Migration Score (0–100, higher = easier migration), ease rating (Easy / Moderate / Hard / Very Hard), phased timeline estimate, and the set of adjustment factors applied.
 license: Apache-2.0
 metadata:
-  version: "1.0.0"
+  version: "2.0.0"
 ---
 
 # Migration Score — AEM to EDS
 
-Compute a structured migration assessment from a block inventory and site metrics. Returns a migration score, complexity rating, phased timeline estimate, and applied adjustments.
+Automatically analyze a customer site and compute a structured migration assessment. Requires only the customer URL — all block inventory, page metrics, and risk modifiers are discovered from the live site.
 
 ---
 
 ## When to Use This Skill
 
 Use this skill when:
-- You have a completed block inventory (counts by type) and a page count from sitemap analysis
+- You have a customer URL and need a migration complexity rating
 - You need a repeatable, documented migration complexity rating for a customer POV or migration plan
-- An orchestrator skill (customer-pov, analyze-and-plan) needs to populate a migration scope section
+- An orchestrator skill (analyze-and-plan) needs to populate a migration scope section
 
 **Do NOT use this skill when:**
-- You have not yet run block-inventory or page-decomposition — gather those inputs first
 - You only need a rough verbal estimate with no structured output
 
 ## Why This Skill Exists
 
-Migration complexity is computed the same way across multiple orchestrator skills. This skill defines the velocity table, adjustment factors, and scoring formula in one place so they are not duplicated across customer-pov, analyze-and-plan, and any future skill that needs migration estimates.
+Migration complexity is computed the same way across multiple orchestrator skills. This skill defines the velocity table, adjustment factors, and scoring formula in one place so they are not duplicated across analyze-and-plan and any future skill that needs migration estimates. Auto-discovery removes the need for manual block counting.
 
 ## Related Skills
 
-- **customer-pov** — calls this skill after Step 2e/Step 5 to populate the Migration Scope Estimate section
 - **analyze-and-plan** — can call this skill when planning a migration project scope
-- **block-inventory** — provides the block counts this skill needs as input
-- **page-decomposition** — provides service-endpoint component data this skill needs as input
+- **scrape-webpage** — used by this skill to fetch and analyze sample pages
+- **page-decomposition** — provides additional section-level analysis if needed
 
 ---
 
-## Input Contract
+## Step 0 — Prompt for Customer URL
 
-Before running this skill, the caller must supply the following data. All counts are integers. Modifiers are booleans unless stated otherwise.
+If `customer_url` has not been provided by the caller or the user, ask before proceeding:
 
-### Block Inventory (required)
+> **What is the customer's website URL?**
+> Please provide the root URL of the AEM site to assess (e.g., `https://www.example.com`).
 
-| Input | Description | Default if unknown |
+Do not proceed until a URL is supplied. Extract the hostname (e.g., `example.com`) — use it as the default customer name slug for the output filename.
+
+---
+
+## Step 1 — Fetch Sitemap and Measure Site Scale
+
+Fetch the sitemap to count pages, detect locales, and identify template patterns. Try these URLs in order, stopping at the first that returns valid XML:
+
+1. `{customer_url}/sitemap.xml`
+2. `{customer_url}/sitemap_index.xml`
+3. `{customer_url}/robots.txt` → extract `Sitemap:` directive, then fetch that URL
+
+Use the **WebFetch** tool for each request.
+
+**From the sitemap XML, extract:**
+
+- **`total_pages`** — count all `<loc>` entries across all sitemaps (for sitemap index files, sum across child sitemaps; cap at 5 child sitemaps to avoid excessive fetches)
+- **`locale_count`** — count distinct locale path segments in URLs. Look for patterns like `/en/`, `/de/`, `/fr/`, `/ja/`, `/es/`, `/pt/`, `/ko/`, `/zh/`, etc. Each distinct two-letter or IETF language tag counts as one locale. If no locale segments found, set `locale_count = 1`.
+- **`template_count`** — group URLs by path depth and leading path segment (e.g., `/products/`, `/blog/`, `/solutions/`). Count distinct top-level path groups as distinct templates.
+- **`dominant_template`** — set `true` if one path group accounts for ≥ 50% of all URLs.
+- **Sample URLs** — collect 8–12 representative URLs spread across different path groups for Step 2. Prefer URLs at path depth 2–3 (not just the homepage).
+
+If the sitemap is unavailable or returns an error, set `total_pages = 100` (conservative default), note the assumption, and proceed.
+
+---
+
+## Step 2 — Scrape Homepage and Sample Pages
+
+Use the **WebFetch** tool to fetch the raw HTML of the homepage and 3–5 sample URLs collected in Step 1 (aim for variety across path groups). Fetch them in parallel.
+
+For each page fetched, extract:
+- All `<script>` tag `src` attributes and inline content
+- All HTML structural elements: `<section>`, `<article>`, `<aside>`, `<div>` class names
+- Any `data-*` attributes that suggest component or block systems
+- Forms, authentication markers, and personalization tokens
+- Meta tags: `<meta name="generator">`, framework fingerprints
+
+Store the combined HTML signal set for classification in Step 3.
+
+---
+
+## Step 3 — Classify Block Inventory
+
+Analyze the scraped HTML signals from Step 2 to classify blocks into the six migration tiers. Apply each rule set to all pages and sum totals.
+
+### SPA Detection → `blocks_spa`
+
+Count each distinct SPA-rendered section as one `blocks_spa` unit. Signals:
+
+| Signal | Indicator |
+|---|---|
+| `<div id="root">` or `<div id="app">` with minimal server-rendered content | React / Vue SPA |
+| `__NEXT_DATA__` script tag or `/_next/` script paths | Next.js |
+| `ng-version` attribute or `angular.json` references | Angular |
+| `window.__nuxt__` or `_nuxt/` script paths | Nuxt.js |
+| `data-reactroot` or `data-reactid` attributes | React |
+| Script bundles > 500 KB loaded for primary content | Heavy JS rendering |
+
+For each distinct SPA-rendered page section or route detected across sample pages, add 1 to `blocks_spa`. Cap at 10 (larger SPAs are still counted as one workstream).
+
+### Complex Service Blocks → `blocks_service_complex`
+
+Signals indicating auth-gated or real-time data endpoints:
+
+| Signal | Indicator |
+|---|---|
+| Login / sign-in forms or links in navigation | Auth-gated content |
+| References to session tokens, OAuth, SSO | Authentication layer |
+| Personalization tokens: `{firstName}`, `{{user}}`, Adobe Target `mbox` | Personalization |
+| Real-time pricing, inventory, or stock data | Live data feeds |
+| Chat widgets tied to account data | Complex service integration |
+
+Count distinct service integration patterns found. Set `has_auth_personalization = true` if any auth or personalization signal is present.
+
+### Simple Service Blocks → `blocks_service_simple`
+
+Signals indicating static API or query-index patterns:
+
+| Signal | Indicator |
+|---|---|
+| `query-index.json` or `/index.json` fetch patterns | EDS query index |
+| Static JSON data files loaded via fetch | Static data feed |
+| Simple search widgets without auth | Query-based content |
+| Blog / news listing components pulling from a feed | Feed aggregation |
+
+Count distinct static fetch patterns found across sample pages.
+
+### Net-new Custom Blocks → `blocks_custom`
+
+Signals for unique interactive components with no EDS Block Collection equivalent:
+
+| Signal | Indicator |
+|---|---|
+| Complex interactive calculators or configurators | Custom logic required |
+| Multi-step forms with branching logic | Custom block |
+| Video players with custom controls beyond standard `<video>` | Custom media block |
+| Data visualization (charts, maps, dashboards) | Custom block |
+| E-commerce cart, checkout, or product configurator | Custom block |
+| Custom navigation mega-menus with deep nesting | Custom block |
+
+Count distinct custom component types found.
+
+### Customizable Collection Blocks → `blocks_customize`
+
+Signals for components that resemble EDS Block Collection blocks but with modifications:
+
+| Signal | Indicator |
+|---|---|
+| Hero sections with non-standard layouts (video background, split layout) | Customize hero |
+| Card grids with extra fields beyond image/title/text | Customize cards |
+| Tabs or accordions with styling variations | Customize tabs/accordion |
+| Carousels with custom controls or auto-play behavior | Customize carousel |
+| Navigation patterns close to standard but with brand additions | Customize nav |
+
+Count distinct component types in this category.
+
+### Adopt-as-is Collection Blocks → `blocks_adopt`
+
+Signals for components directly covered by EDS Block Collection:
+
+| Signal | Indicator |
+|---|---|
+| Standard hero sections (heading, paragraph, buttons) | Adopt hero |
+| Simple image + text card grids | Adopt cards |
+| Two/three-column text layouts | Adopt columns |
+| Standard FAQ accordion | Adopt accordion |
+| Basic tab navigation | Adopt tabs |
+| Simple image carousel | Adopt carousel |
+| Pull-quote or testimonial sections | Adopt quote |
+| Reusable content fragments | Adopt fragment |
+
+Count distinct standard block types found.
+
+---
+
+## Step 4 — Finalize Risk Modifiers
+
+Combine signals from Steps 1–3 to set each risk modifier:
+
+| Modifier | Source | Value |
 |---|---|---|
-| `blocks_adopt` | Blocks covered by EDS Block Collection, usable as-is | 0 |
-| `blocks_customize` | Blocks needing minor customization of an existing collection block | 0 |
-| `blocks_custom` | Net-new custom blocks with no collection equivalent | 0 |
-| `blocks_service_simple` | Service-endpoint blocks using static fetch / query-index pattern | 0 |
-| `blocks_service_complex` | Service-endpoint blocks requiring auth, edge proxy, or real-time data | 0 |
-| `blocks_spa` | SPA sections requiring full re-implementation in plain JS | 0 |
+| `locale_count` | Sitemap URL patterns (Step 1) | Integer count |
+| `has_auth_personalization` | Auth/personalization signals (Step 3) | true / false |
+| `has_formal_qa` | Cannot be auto-detected | Default: **false** — note assumption |
+| `dominant_template` | Sitemap path distribution (Step 1) | true / false |
 
-### Site Metrics (required)
+Print a discovery summary before proceeding to scoring:
 
-| Input | Description |
-|---|---|
-| `total_pages` | Total page count from sitemap analysis |
-| `template_count` | Number of distinct page template types |
+```
+Site Discovery Summary — {customer_url}
+─────────────────────────────────────────
+Total pages:          {total_pages}
+Locales detected:     {locale_count}
+Templates detected:   {template_count}
+Dominant template:    {yes/no}
 
-### Risk Modifiers (optional — default false / 0 if not provided)
+Block classification:
+  Adopt as-is:        {blocks_adopt}
+  Customize:          {blocks_customize}
+  Custom (net-new):   {blocks_custom}
+  Service (simple):   {blocks_service_simple}
+  Service (complex):  {blocks_service_complex}
+  SPA sections:       {blocks_spa}
 
-| Input | Description |
-|---|---|
-| `locale_count` | Number of languages / locales (integer; triggers +25% if ≥ 3) |
-| `has_auth_personalization` | True if auth-gated or personalized content spans many page types |
-| `has_formal_qa` | True if customer has a formal, gated UAT / QA process |
-| `already_uses_docs` | True if customer already authors in Google Docs or SharePoint today |
-| `dominant_template` | True if ≥ 50% of pages share a single template |
+Risk modifiers:
+  Auth/personalization: {yes/no}
+  Formal QA process:    assumed no (could not detect)
+```
 
 ---
 
-## Step 1 — Classify Block Complexity
+## Step 5 — Classify Block Complexity
 
 Compute the total block count and custom block ratio:
 
@@ -97,7 +239,7 @@ If multiple rules match, use the highest tier.
 
 ---
 
-## Step 2 — Apply Reference Velocities
+## Step 6 — Apply Reference Velocities
 
 Using the base complexity tier, look up each work item's velocity. Use the **midpoint** of each range for effort calculations.
 
@@ -143,7 +285,7 @@ raw_effort = block_effort + page_effort
 
 ---
 
-## Step 3 — Apply Adjustment Factors
+## Step 7 — Apply Adjustment Factors
 
 Apply each matching modifier to `raw_effort`. Record every factor applied — it will appear in the output assumptions list.
 
@@ -152,7 +294,6 @@ Apply each matching modifier to `raw_effort`. Record every factor applied — it
 | Multi-locale overhead | `locale_count` ≥ 3 | +25% |
 | Auth / personalization complexity | `has_auth_personalization` is true | +20% |
 | Formal QA / UAT gating | `has_formal_qa` is true | +15% |
-| Already uses Docs / SharePoint | `already_uses_docs` is true | −15% |
 | Dominant single template | `dominant_template` is true | −10% |
 
 Apply all matching adjustments multiplicatively:
@@ -165,7 +306,7 @@ If no modifiers apply, `adjusted_effort = raw_effort`.
 
 ---
 
-## Step 4 — Compute Migration Score (0–100)
+## Step 8 — Compute Migration Score (0–100)
 
 The Migration Score is a normalized composite index — a single comparable number for stakeholder summaries. **Higher score = easier migration; lower score = more complex migration.** It supplements the timeline estimate; it does not replace it.
 
@@ -199,7 +340,6 @@ Compute complexity penalty sub-scores, then subtract from 100.
 | `locale_count` ≥ 3 | +5 |
 | `has_auth_personalization` | +5 |
 | `has_formal_qa` | +5 |
-| `already_uses_docs` | −5 |
 
 ```
 complexity_penalty = clamp(block_sub + page_sub + risk_sub, 0, 100)
@@ -217,9 +357,9 @@ Map score to ease label:
 
 ---
 
-## Step 5 — Build Phase Timeline
+## Step 9 — Build Phase Timeline
 
-Divide `adjusted_effort` across phases using these allocation rules. Derive concrete week / quarter estimates from the block and page effort numbers computed in Steps 2–3.
+Divide `adjusted_effort` across phases using these allocation rules. Derive concrete week / quarter estimates from the block and page effort numbers computed in Steps 6–7.
 
 **Phase 0 — POC (target: 2–4 weeks)**
 - Scope: 1 representative page (homepage or highest-traffic landing page); typically 4–8 blocks
@@ -248,9 +388,32 @@ Divide `adjusted_effort` across phases using these allocation rules. Derive conc
 
 ---
 
-## Step 6 — Return Structured Output
+## Step 10 — Save and Return Structured Output
 
-Produce the following structured result. The calling skill embeds this output in its own document.
+Produce the following structured result. When called standalone, save it to the output subfolder (instructions below). When called by an orchestrator skill, the calling skill is responsible for embedding or persisting this output.
+
+### Output File
+
+1. **Resolve the output directory** — run this to get the absolute path:
+   ```bash
+   SKILL_DIR="$(git rev-parse --show-toplevel)/plugins/aem/edge-delivery-services/skills/migration-score"
+   mkdir -p "$SKILL_DIR/output"
+   echo "$SKILL_DIR/output"
+   ```
+   Use the printed path in the next step.
+
+2. **Derive the filename:**
+   - If a customer or project name was provided, use it as a slug: lowercase, spaces and special characters replaced with hyphens.
+   - If no explicit name was provided, derive the slug from the `customer_url` hostname (e.g., `https://www.example.com` → `example-com`).
+   - Format: `<slug>-migration-score-<YYYY-MM-DD>.md` (e.g., `acme-corp-migration-score-2026-06-07.md`)
+   - If neither a name nor a URL was provided, use: `migration-score-<YYYY-MM-DD>.md`
+
+3. **Write the file** using the Write tool to `<output_dir>/<filename>`.
+
+4. **Confirm the saved path** to the user:
+   > Migration score saved to `plugins/aem/edge-delivery-services/skills/migration-score/output/<filename>`
+
+### Structured Output
 
 ```markdown
 ### Migration Score
@@ -282,7 +445,7 @@ Produce the following structured result. The calling skill embeds this output in
 
 ### Phase Timeline
 
-[Insert completed phase timeline table from Step 5]
+[Insert completed phase timeline table from Step 9]
 
 ---
 
@@ -291,8 +454,23 @@ Produce the following structured result. The calling skill embeds this output in
 [List every adjustment applied, one bullet per line:]
 • +25% — 3+ locales detected (translation coordination overhead)
 • +20% — auth / personalization present across page types
-• −15% — customer already authors in SharePoint / Google Docs
+
+[Note any values that could not be auto-detected and were defaulted:]
+• has_formal_qa — could not be detected from public site; assumed false
 
 [If no adjustments applied, write:]
 • No adjustments applied — baseline estimate used.
 ```
+
+---
+
+## Step 11 — Deliver and Offer Next Actions
+
+After presenting the migration score output, offer the following options:
+
+1. **Refine the inputs** — "Would you like to adjust any block counts, page volumes, or risk modifiers and recompute the score?"
+2. **Drill into a phase** — "Would you like a more detailed breakdown of Phase 0 or Phase 1 scope and effort?"
+3. **Generate a PPTX presentation** — "Would you like me to produce a PowerPoint presentation of this migration assessment? I'll use the official Adobe EDS POV slide templates and populate them with the migration score, timeline, and assumptions." _(Invoke the `/generate-pptx` skill, passing the customer/project name and the migration score output generated above.)_
+4. **Feed into a full POV** — "Would you like to incorporate this migration score into a full customer POV? Run `/customer-pov` and this output will be used to populate the migration approach section."
+
+After any refinement accepted by the user, overwrite the existing output file with the updated content using the Write tool (same path as Step 10). Confirm the update to the user.

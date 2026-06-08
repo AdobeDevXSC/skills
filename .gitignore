@@ -18,3 +18,5 @@ dist/
 
 # OMC state
 .omc/
+plugins/aem/edge-delivery-services/skills/customer-pov/output/*
+plugins/aem/edge-delivery-services/skills/migration-score/output/*
