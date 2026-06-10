@@ -88,6 +88,33 @@ For any result whose filename matches one of the five files below, read it using
 
 Search Adobe's internal knowledge base for existing account context, previous engagements, sales notes, and AEM-relevant collateral beyond what the Project Happy Path files contain.
 
+> **EXCLUSION — ContentXSC Knowledge Hub "happy path customers" folder**
+>
+> Do **not** read or cite any file found in:
+> `ContentXSCKnowledgeHub / Shared Documents / Knowledge Hub / AEM / Sites / happy path customers`
+> (URI prefix: `file:///b!no_DW-aYRk-Xq2EIa4Yd2T1Znw49_o5KsAXrWafbr27LKqOx8IScQqQHyo3luEX6/015UYK6Y5RKDO3HYCYJVEJ254GVNPEEWJN`)
+>
+> This folder is a **shared knowledge hub for completed POVs** — files there are the *output* of this skill (or a prior run of it), not primary account intelligence. Using them as research input creates a circular dependency that contaminates the new POV with stale or AI-generated content.
+>
+> **How to apply this exclusion at search time:**
+> - After any SharePoint search, filter out results whose `parentReference.path` or `webUrl` contains both `ContentXSCKnowledgeHub` and `happy path customers`.
+> - Do not call `read_resource` on URIs starting with the prefix above.
+> - Log skipped results as: `[SKIPPED — ContentXSC Knowledge Hub excluded]`.
+
+**Optional pre-flight check:** Before running the main searches below, check whether a POV already exists for this customer in the knowledge hub:
+
+```
+sharepoint_folder_search name: "happy path customers" site: "ContentXSCKnowledgeHub"
+```
+
+Read the folder listing. If a file whose name contains the customer name or slug is present, surface it:
+
+> "A previously-generated POV exists in the ContentXSC Knowledge Hub for this customer: `<filename>`. I will generate a fresh POV using current research — you may want to review or supersede the existing file once the new one is complete."
+
+Then proceed with the fresh POV regardless.
+
+---
+
 **Use the Microsoft 365 SharePoint search tool** with the following queries (run all, then filter for relevance):
 
 ```
