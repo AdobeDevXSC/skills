@@ -32,14 +32,14 @@ The approved slide template lives in the `AEMNAMExpertSCs` SharePoint site.
 Search for the template file using the Microsoft 365 SharePoint search tool:
 
 ```
-sharepoint_search query: "IQBBJ6nG6C1wQYK1Hvo-oinoAQe3nVoBFjfRK91rzoiloLY" fileType: "pptx" site: "AEMNAMExpertSCs"
+sharepoint_search query: "Adobe_Presentation_Template" fileType: "pptx" site: "AEMNAMExpertSCs"
 ```
 
 If that returns no results, fall back to these searches (run in order, stop at first hit):
 
 ```
-sharepoint_search query: "POV template" fileType: "pptx" site: "AEMNAMExpertSCs"
-sharepoint_search query: "EDS POV" fileType: "pptx" site: "AEMNAMExpertSCs"
+sharepoint_search query: "wc6a927412de8417082b51efa3ea229e8" fileType: "pptx" site: "AEMNAMExpertSCs"
+sharepoint_search query: "Project Happy Path powerpoint templates" fileType: "pptx" site: "AEMNAMExpertSCs"
 ```
 
 ---
@@ -71,7 +71,7 @@ Use the following download protocol to retrieve the template file locally.
 
       > I found the template file but can't download it automatically — SharePoint didn't provide a pre-authenticated URL. Please open the link below in your browser, download the file, and tell me the local path where you saved it.
       >
-      > **Open in browser:** `https://adobe.sharepoint.com/:p:/s/AEMNAMExpertSCs/IQBBJ6nG6C1wQYK1Hvo-oinoAQe3nVoBFjfRK91rzoiloLY?e=eVPfwJ`
+      > **Open in browser:** `https://adobe.sharepoint.com/:p:/r/sites/AEMNAMExpertSCs/Shared%20Documents/_2026%20Industry%20AEM%20Files/Project%20Happy%20Path/powerpoint%20templates/Adobe_Presentation_Template.pptx?d=wc6a927412de8417082b51efa3ea229e8&csf=1&web=1&e=sHpxIy`
 
       Wait for the user to respond with a local path, then copy it to `/tmp/generate-pptx/pov-template.pptx` and continue.
 
