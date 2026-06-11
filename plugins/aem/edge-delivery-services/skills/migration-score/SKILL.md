@@ -439,6 +439,59 @@ Produce the following structured result. When called standalone, save it to the 
 
 ---
 
+### Effort Calculation Detail
+
+**Complexity tier applied:** Low / Medium / High _(fill in actual tier)_
+
+**Block Build Effort — line by line:**
+
+Each block type is multiplied by its per-block velocity midpoint for the complexity tier above.
+CI/CD setup and author training are fixed costs added once per engagement.
+
+| Block Type | Count | Rate (days / block) | Subtotal |
+|---|---|---|---|
+| Adopt as-is | N | 0.5 | N × 0.5 = X days |
+| Minor customization | N | midpoint(range) | N × midpoint = X days |
+| Net-new custom block | N | midpoint(range) | N × midpoint = X days |
+| Service-endpoint (simple fetch) | N | midpoint(range) | N × midpoint = X days |
+| Service-endpoint (auth / complex) | N | midpoint(range) | N × midpoint = X days |
+| SPA sections | N | midpoint(range) | N × midpoint = X days |
+| CI/CD pipeline + GitHub setup | — | midpoint(range) | X days |
+| Author onboarding & training | — | midpoint(range) | X days |
+| **Block build raw total** | | | **X days** |
+
+_Replace every N, midpoint, and X with the actual computed values. Show the arithmetic explicitly (e.g., `5 × 11.5 = 57.5 days`) so the reader can verify the calculation without referencing the velocity table._
+
+**Velocity midpoints used (per complexity tier):**
+
+| Work Item | Low midpoint | Medium midpoint | High midpoint |
+|---|---|---|---|
+| Adopt as-is | 0.5 days | 0.5 days | 0.5 days |
+| Minor customization | 1.5 days | 2.5 days | 4.0 days |
+| Net-new custom block | 4.0 days | 6.5 days | 11.5 days |
+| Service-endpoint (simple) | 1.5 days | 2.5 days | 4.0 days |
+| Service-endpoint (complex) | 4.0 days | 6.5 days | 11.5 days |
+| SPA section | 15.0 days | 30.0 days | 40.0 days |
+| CI/CD setup | 2.5 days | 4.0 days | 6.5 days |
+| Author training | 1.5 days | 2.5 days | 4.0 days |
+
+---
+
+**Page Migration Effort:**
+
+Page effort is driven entirely by the total page count and the page velocity midpoint for the complexity tier.
+
+| Input | Value |
+|---|---|
+| Total pages (from sitemap) | ~N |
+| Page velocity range (complexity tier) | Low: 50–100 p/day · Medium: 20–50 p/day · High: 10–20 p/day |
+| Page velocity midpoint used | N pages/day |
+| Calculation | N pages ÷ N pages/day = **X days** |
+
+_Page velocity assumes bulk, author-driven migration (content copy + formatting), not developer-led work. One developer + one content author pair working in parallel._
+
+---
+
 ### Phase Timeline
 
 [Insert completed phase timeline table from Step 9]
