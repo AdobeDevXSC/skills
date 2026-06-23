@@ -21,6 +21,13 @@ dist/
 
 # OMC state
 .omc/
+
+# Ignore all plugins except edge-delivery-services
+plugins/*
+!plugins/aem/
+plugins/aem/*
+!plugins/aem/edge-delivery-services/
+
 plugins/aem/edge-delivery-services/skills/customer-pov/output/*
 plugins/aem/edge-delivery-services/skills/customer-pov/scripts/*
 plugins/aem/edge-delivery-services/skills/migration-score/output/*
