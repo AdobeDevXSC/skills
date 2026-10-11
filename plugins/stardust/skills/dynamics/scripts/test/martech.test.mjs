@@ -137,8 +137,9 @@ check('aemMartech: a rebuild keeps the owner choices; the handoff lists data-lay
   assert.deepEqual([next.enabled, next.category, next.config.datastreamId], [true, 'C0002', DS[1]]);
   const md = renderHandoff(build([SCRIPTS.launch], { launch: SDK(DS), onetrust: [] }));
   assert.match(md, /must push the same events: `cart:add` \(1\)/);
-  assert.match(md, /tagging plan \(solution design reference\)/);
-  assert.match(md, /## Data-layer rules[\s\S]*rule `RL4` Cart add — listens for `cart:add`/);
+  assert.match(md, /tagging plan \(solution design reference\)[\s\S]*add each push in the block that owns the interaction/);
+  assert.match(md, /## Data layer[\s\S]*Adobe Launch rules fire on data-layer pushes[\s\S]*rule `RL4` Cart add — listens for `cart:add`/);
+  assert.match(md, /re-run `deploy\/scripts\/martech-scaffold\.mjs` and `dynamics\/scripts\/dynamics-check\.mjs`/);
   assert.match(md, /extension 2\.34\.2 \(managed library, self-hosted build supported\)/);
   assert.match(md, /choose one/);
   assert.match(md, /git subtree add --squash --prefix plugins\/martech/);
@@ -177,5 +178,16 @@ check('readEvidence: a spec knowledge folder (martech.json#evidence) reads as th
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+check('data layer: any tag manager or data-layer global gets the section; unread tag managers are named', () => {
+  const d = { pages: { '/': { host: 'www.example.com', scripts: [SCRIPTS.gtm], cms: { dataLayer: ['0'], digitalData: ['page'] } } } };
+  const c = buildContract({ dynamics: d, provenance: { writtenBy: 'test' } });
+  assert.deepEqual([c.tagManagers, c.dataLayers], [['Google Tag Manager'], ['dataLayer', 'digitalData']]);
+  const md = renderHandoff(c);
+  assert.match(md, /## Data layer\n\nThe source pages expose `dataLayer`, `digitalData`; keep the same global names\./);
+  assert.match(md, /Rules in Google Tag Manager were not read; their triggers and events come from the tagging plan\./);
+  assert.match(md, /add each push in the block that owns the interaction/);
+  assert.doesNotMatch(renderHandoff(buildContract({ dynamics: { pages: { '/': { host: 'x.test', scripts: [] } } }, provenance: {} })), /## Data layer/);
+  assert.doesNotMatch(renderHandoff(build([SCRIPTS.launch], { launch: SDK(DS), onetrust: [] })), /Rules in Adobe Launch were not read/);
+});
 if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }
 console.log('martech: all checks passed');

@@ -55,12 +55,13 @@ function routesOf(row, scripts, groups) {
 }
 
 function rewriteOf(launch) {
-  if (!launch) return { rules: [], dataElements: [], dataLayer: [], dataLayerPaths: [] };
+  if (!launch) return { library: null, rules: [], dataElements: [], dataLayer: [], dataLayerPaths: [] };
   return {
     rules: launch.rules
       .map((r) => ({ id: r.id, name: r.name, paths: (r.paths || []).filter((p) => /\.html?\b/.test(p)), selectors: r.selectors || [] }))
       .filter((r) => r.paths.length || r.selectors.length),
     dataElements: launch.dataElements.filter((d) => d.selectors?.length).map(({ name, selectors }) => ({ name, selectors })),
+    library: 'Adobe Launch',
     dataLayer: launch.rules.filter((r) => (r.events || []).some((e) => /datalayer/i.test(e))).map(({ id, name, pushEvents }) => ({ id, name, events: pushEvents || [] })),
     dataLayerPaths: [...new Set(launch.dataElements.filter((d) => /datalayer/i.test(d.type || '') && d.source).map((d) => d.source))],
   };
@@ -125,6 +126,8 @@ function keepOwnerChoices(contract, previous) {
   return contract;
 }
 
+const DATA_LAYERS = ['adobeDataLayer', 'dataLayer', 'digitalData', 'utag_data'];
+
 export function buildContract({ dynamics, martech = { launch: null, onetrust: [] }, provenance, previous = null }) {
   const pages = Object.values(dynamics.pages || {});
   const scripts = [...new Set(pages.flatMap((p) => p.scripts || []))];
@@ -141,6 +144,8 @@ export function buildContract({ dynamics, martech = { launch: null, onetrust: []
     consent: consentOf(cmpRow, scripts, martech, ruleSet),
     routes,
     otherTags: seen.filter((v) => ['T', 'A'].includes(v.class) && v !== cmpRow && !routed.has(v.role.replace(/^tag manager: /, '')) && !(target && v.target)).map((v) => v.role),
+    tagManagers: seen.filter((v) => /^tag manager: /.test(v.role)).map((v) => v.role.replace(/^tag manager: /, '')),
+    dataLayers: DATA_LAYERS.filter((k) => pages.some((p) => p.cms?.[k] !== undefined)),
     rewrite: rewriteOf(martech.launch),
     aemMartech: aemMartechOf(martech.launch, scripts, routes),
     target,
@@ -155,16 +160,19 @@ const MODEL = {
 
 const evName = (e) => (e === '*' ? 'any push' : e ? `\`${e}\`` : 'an event the rule settings do not name');
 
-function dataLayerHandoff({ dataLayer = [], dataLayerPaths = [] }) {
-  if (!dataLayer.length) return [];
+function dataLayerHandoff({ rewrite: { library = null, dataLayer = [], dataLayerPaths = [] } = {}, tagManagers = [], dataLayers = [] }) {
+  if (!dataLayer.length && !tagManagers.length && !dataLayers.length) return [];
   const count = new Map();
   dataLayer.forEach((r) => (r.events?.length ? r.events : [null]).forEach((e) => count.set(e, (count.get(e) || 0) + 1)));
+  const unread = tagManagers.filter((t) => t !== library);
   return [
-    '', '## Data-layer rules', '',
-    `These fire on data-layer pushes; the migrated pages must push the same events: ${[...count].sort((a, b) => b[1] - a[1]).map(([e, n]) => `${evName(e)} (${n})`).join(' · ')}.`,
+    '', '## Data layer', '',
+    ...(dataLayers.length ? [`The source pages expose ${dataLayers.map((d) => `\`${d}\``).join(', ')}; keep the same global names.`] : []),
+    ...(dataLayer.length ? [`${library} rules fire on data-layer pushes; the migrated pages must push the same events: ${[...count].sort((a, b) => b[1] - a[1]).map(([e, n]) => `${evName(e)} (${n})`).join(' · ')}.`] : []),
     ...(dataLayerPaths.length ? [`Data elements read these data-layer paths: ${dataLayerPaths.map((p) => `\`${p}\``).join(', ')}.`] : []),
-    'Ask the owner for the tagging plan (solution design reference) for each payload; these rules depend on it.',
-    '',
+    ...(unread.length ? [`Rules in ${unread.join(', ')} were not read; their triggers and events come from the tagging plan.`] : []),
+    'Ask the owner for the tagging plan (solution design reference): each event, its payload and the interaction that pushes it. With it, add each push in the block that owns the interaction.',
+    ...(dataLayer.length ? [''] : []),
     ...dataLayer.map((r) => `- rule \`${r.id}\` ${r.name} — listens for ${(r.events?.length ? r.events : [null]).map(evName).join(', ')}`),
   ];
 }
@@ -203,7 +211,7 @@ export function renderHandoff(c) {
   return [
     '# Martech hand-off',
     '',
-    `Everything below is scaffolded **off**. To ship it, set \`enabled: true\` on \`consent.cmp\` and on each route in \`stardust/martech-contract.json\`, then re-run \`deploy/scripts/martech-scaffold.mjs\`. Enabled tags load on ${c.productionHosts.map((h) => `\`${h}\``).join(', ') || 'the production hosts'} only; preview with \`?martech=on\` (add \`&consent=accept\` to grant every category).`,
+    `Everything below is scaffolded **off**. To ship it, set \`enabled: true\` on \`consent.cmp\` and on each route in \`stardust/martech-contract.json\`, then re-run \`deploy/scripts/martech-scaffold.mjs\` and \`dynamics/scripts/dynamics-check.mjs\` to confirm the enabled tags load. Enabled tags load on ${c.productionHosts.map((h) => `\`${h}\``).join(', ') || 'the production hosts'} only; preview with \`?martech=on\` (add \`&consent=accept\` to grant every category).`,
     '',
     '## Consent',
     '',
@@ -228,7 +236,7 @@ export function renderHandoff(c) {
         ...c.rewrite.dataElements.map((d) => `- data element \`${d.name}\` — selectors ${d.selectors.map((s) => `\`${s}\``).join(', ')}`),
       ]
       : ['Nothing found (or no tag-manager library read).']),
-    ...dataLayerHandoff(c.rewrite),
+    ...dataLayerHandoff(c),
     ...webSdkHandoff(c.aemMartech),
     ...targetHandoff(c.target),
   ].join('\n');
