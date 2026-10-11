@@ -91,6 +91,19 @@ function aemMartechOf(launch, scripts, routes) {
   };
 }
 
+/** Adobe Target seen on the source (Launch at.js extension, page-level at.js, Web SDK decision rules) → contract entry, or null. */
+function targetOf(launch, scripts) {
+  const row = vendors().find((v) => v.target);
+  const t = launch?.target;
+  const page = scripts.find((s) => row.re.test(s));
+  if (!t && !page) return null;
+  return {
+    atjs: t?.atjs ? { from: 'launch', extension: t.atjs } : page ? { from: 'page', src: page } : null,
+    webSdk: t?.renderRules?.length ? { renderRules: t.renderRules, prehiding: t.prehiding } : null,
+    enabled: false,
+  };
+}
+
 function keepOwnerChoices(contract, previous) {
   const { cmp } = contract.consent;
   const was = previous.consent?.cmp;
@@ -107,6 +120,7 @@ function keepOwnerChoices(contract, previous) {
     Object.assign(am, { enabled: !!wasAm.enabled, category: wasAm.category ?? null });
     Object.keys(am.config).forEach((k) => { if (wasAm.config?.[k] != null) am.config[k] = wasAm.config[k]; });
   }
+  if (contract.target && previous.target) contract.target.enabled = !!previous.target.enabled;
   return contract;
 }
 
@@ -119,14 +133,16 @@ export function buildContract({ dynamics, martech = { launch: null, onetrust: []
   const ruleSet = ruleSets.find((r) => r.default) || ruleSets[0];
   const routes = seen.filter((v) => v.loaders).flatMap((v) => routesOf(v, scripts, ruleSet?.groups || []));
   const routed = new Set(routes.map((r) => r.vendor));
+  const target = targetOf(martech.launch, scripts);
   const contract = {
     _provenance: provenance,
     productionHosts: [...new Set(pages.map((p) => p.host).filter(Boolean))],
     consent: consentOf(cmpRow, scripts, martech, ruleSet),
     routes,
-    otherTags: seen.filter((v) => ['T', 'A'].includes(v.class) && v !== cmpRow && !routed.has(v.role.replace(/^tag manager: /, ''))).map((v) => v.role),
+    otherTags: seen.filter((v) => ['T', 'A'].includes(v.class) && v !== cmpRow && !routed.has(v.role.replace(/^tag manager: /, '')) && !(target && v.target)).map((v) => v.role),
     rewrite: rewriteOf(martech.launch),
     aemMartech: aemMartechOf(martech.launch, scripts, routes),
+    target,
   };
   return previous ? keepOwnerChoices(contract, previous) : contract;
 }
@@ -149,7 +165,18 @@ function webSdkHandoff(a) {
     `- **defaultConsent:** source ${k.defaultConsent ? `\`${k.defaultConsent}\`` : 'unknown'}; the plugin defaults to \`pending\` and sends nothing until \`updateUserConsent\`. Keep the source value to keep its consent model.`,
     ...(a.missingExtensions.length ? [`- **Missing Launch extension:** ${a.missingExtensions.join(', ')} — the plugin requires it.`] : []),
     '',
-    'To switch: (1) `git subtree add --squash --prefix ' + `${a.plugin.path} ${a.plugin.repo} main\`; (2) in Launch, set the Web SDK extension to the self-hosted build with the same instance name and publish — otherwise the SDK loads twice; (3) set \`aemMartech.enabled\` and leave the \`adobe-launch\` route disabled (the plugin loads \`launchUrls\`); (4) re-run the scaffold. Personalization (Target) is not wired.`,
+    'To switch: (1) `git subtree add --squash --prefix ' + `${a.plugin.path} ${a.plugin.repo} main\`; (2) in Launch, set the Web SDK extension to the self-hosted build with the same instance name and publish — otherwise the SDK loads twice; (3) set \`aemMartech.enabled\` and leave the \`adobe-launch\` route disabled (the plugin loads \`launchUrls\`); (4) re-run the scaffold.`,
+  ];
+}
+
+function targetHandoff(t) {
+  if (!t) return [];
+  const { atjs: a, webSdk: w } = t;
+  return [
+    '', '## Personalization (Target)', '',
+    ...(w ? [`Target decisions come through the Web SDK (rules ${w.renderRules.map((r) => `\`${r.id}\``).join(', ')} render them${w.prehiding ? ', with a prehiding style' : ''}). To keep them: with \`aemMartech\` switched on, set \`target.enabled\` and re-run the scaffold. The plugin then fetches decisions in the eager phase and hides the page until they apply; check LCP and flicker on preview.`] : []),
+    ...(a ? [`${w ? 'Also, at.js' : 'Target runs on at.js'} (${a.from === 'launch' ? `Launch extension \`${a.extension}\`` : `page-level \`${a.src}\`, not routed: it will not load on the migrated site`}). ${a.from === 'launch' ? 'Launch loads late on the migrated site, so above-the-fold activities apply late or flicker. ' : ''}\`aem-martech\` renders Target only through the Web SDK: moving the activities to the Web SDK is an owner project.`] : []),
+    '`target` stays off until then.',
   ];
 }
 
@@ -188,5 +215,6 @@ export function renderHandoff(c) {
       ? ['', '## Data-layer rules', '', 'These fire on data-layer pushes; the migrated pages must push the same events:', ...c.rewrite.dataLayer.map((r) => `- rule \`${r.id}\` ${r.name}`)]
       : []),
     ...webSdkHandoff(c.aemMartech),
+    ...targetHandoff(c.target),
   ].join('\n');
 }

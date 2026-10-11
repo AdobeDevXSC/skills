@@ -25,6 +25,9 @@ that only fire if the new pages push the same events. None of it was read.
   lazy/delayed after. The Launch property comes through `launchUrls`. A category grants `collect` on consent.
   The scaffold refuses missing values, a missing `plugins/martech`, or the same property also enabled as a route.
   Off, the output is unchanged byte for byte.
+- **Target** is read the same way: the at.js extension (or a page-level at.js) and the Web SDK rules that render
+  decisions. The contract gains `target`, off, and the hand-off a Personalization section. With `target.enabled`,
+  the scaffold sets `personalization`, only on top of `aemMartech`. at.js activities stay an owner move.
 - **`dynamics-check`** treats the edge host as a route: forbidden on `/`, gated with a category, and expected on
   accept once enabled.
 

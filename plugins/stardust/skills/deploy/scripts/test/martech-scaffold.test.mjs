@@ -218,6 +218,24 @@ await check('runtime: an aemMartech category sets collect only once the CMP gran
   assert.deepEqual(globalThis.martechCalls.find((c) => c[0] === 'consent'), ['consent', { collect: true }]);
 });
 
+await check('target: needs aemMartech and Web SDK decisions; enabled, it turns personalization on; off, martech.js is unchanged', async () => {
+  const T = (over = {}) => ({ atjs: null, webSdk: { renderRules: [{ id: 'RL5', name: 'Page view' }], prehiding: true }, enabled: true, ...over });
+  const withT = (am, target) => { const root = amSite(am); writeFileSync(join(root, 'stardust/martech-contract.json'), JSON.stringify({ ...JSON.parse(file(root, 'stardust/martech-contract.json')), target })); return root; };
+  const noAm = run(withT(AM({ enabled: false }), T()));
+  assert.equal(noAm.status, 1); assert.match(noAm.stderr, /target is enabled but aemMartech is not/);
+  const atjs = run(withT(AM(), T({ atjs: { from: 'launch', extension: 'adobe-target-v2' }, webSdk: null })));
+  assert.equal(atjs.status, 1); assert.match(atjs.stderr, /move the at\.js activities to the Web SDK first/);
+  const off = withT(AM(), T({ enabled: false })); run(off);
+  const plain = amSite(AM()); run(plain);
+  assert.equal(file(off, 'scripts/martech.js'), file(plain, 'scripts/martech.js'));
+  const root = withT(AM(), T());
+  assert.equal(run(root).status, 0);
+  globalThis.martechCalls = [];
+  await boot({ root, search: '?martech=on' });
+  await new Promise((done) => { setTimeout(done, 20); });
+  assert.equal(globalThis.martechCalls[0][2].personalization, true);
+});
+
 await check('--help prints the usage header', () => {
   const r = spawnSync(process.execPath, [SCAFFOLD, '--help'], { encoding: 'utf8' });
   assert.equal(r.status, 0); assert.match(r.stdout, /--dry-run/);

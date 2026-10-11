@@ -75,6 +75,9 @@ function configOf(contract) {
     if (am.category && !(cmp?.groups && cmp?.event)) fail('aemMartech has a category but the CMP exposes no consent groups — clear the category or set consent.cmp.groups/event');
     if (k.defaultConsent === 'pending' && !am.category) fail('aemMartech.config.defaultConsent is `pending` with no category — nothing would ever be sent');
   }
+  const target = contract.target?.enabled ? contract.target : null;
+  if (target && !am) fail('target is enabled but aemMartech is not — switch the Web SDK on first; the plugin renders Target only through it');
+  if (target && !target.webSdk) fail('target is enabled but the source renders no Target decisions through the Web SDK — move the at.js activities to the Web SDK first');
   return {
     productionHosts: contract.productionHosts || [],
     cmp: cmp && {
@@ -85,7 +88,7 @@ function configOf(contract) {
       aemMartech: {
         module: `../${pluginDir(am)}/src/index.js`,
         webSdk: Object.fromEntries(['orgId', 'datastreamId', 'edgeDomain', 'defaultConsent'].filter((f) => am.config[f]).map((f) => [f, am.config[f]])),
-        options: { alloyInstanceName: am.config.alloyInstanceName || 'alloy', launchUrls: am.config.launchUrls || [], personalization: false },
+        options: { alloyInstanceName: am.config.alloyInstanceName || 'alloy', launchUrls: am.config.launchUrls || [], personalization: !!target },
         category: am.category || null,
       },
     }),

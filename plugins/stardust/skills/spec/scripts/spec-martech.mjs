@@ -2,7 +2,7 @@
 /**
  * spec-martech.mjs — S9 martech from public artefacts: security headers + CSP of the origin; script/iframe hosts
  * and their reach (spec-parse signals) classified with the dynamics vendor table; the Adobe Launch library when
- * present (extensions, the Web SDK extension's instances and datastreams, rules with page-path conditions and DOM
+ * present (extensions, the Web SDK extension's instances and datastreams, Target via at.js or Web SDK decisions, rules with page-path conditions and DOM
  * selectors, data elements with their data-layer paths, custom-code files and the hosts they load); OneTrust geo rule sets and cookie categories when present.
  *
  *   node spec-martech.mjs [--config <file>] [--no-custom-code]
@@ -61,6 +61,20 @@ function webSdkOf(js) {
   };
 }
 
+/**
+ * Adobe Target in a Launch container: the at.js extension (`adobe-target` v1, `adobe-target-v2`) and the
+ * Web SDK rules that render Target decisions (`renderDecisions` on a sendEvent action), plus whether the
+ * Web SDK prehides content while it waits for them. Null when neither is present. Pure.
+ */
+function targetOf(js) {
+  const atjs = ['adobe-target-v2', 'adobe-target'].find((k) => js.includes(`"${k}":{displayName:`) || js.includes(`,${k}:{displayName:`)) || null;
+  const renderRules = [...js.matchAll(/\{id:"(RL[0-9a-f]+)",name:"([^"]+)"/g)]
+    .filter((m) => /adobe-alloy\/[^"]*sendEvent[\s\S]*?renderDecisions:(?:!0|true)/.test(block(js, m.index)))
+    .map((m) => ({ id: m[1], name: m[2] }));
+  if (!atjs && !renderRules.length) return null;
+  return { atjs, renderRules, prehiding: /prehidingStyle:"[^"]+"/.test(js) };
+}
+
 /** Parse a minified Adobe Launch container. Pure. */
 export function parseLaunch(js) {
   const build = (js.match(/buildInfo:\{[^}]*\}/) || [''])[0];
@@ -91,7 +105,7 @@ export function parseLaunch(js) {
     };
   });
   const orgId = (js.match(/company:\{orgId:"([^"]+)"/) || [])[1] || null;
-  return { build, orgId, extensions: [...new Set(extensions)], webSdk: webSdkOf(js), dataElements, rules };
+  return { build, orgId, extensions: [...new Set(extensions)], webSdk: webSdkOf(js), target: targetOf(js), dataElements, rules };
 }
 
 async function sources() {

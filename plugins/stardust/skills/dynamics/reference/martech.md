@@ -49,7 +49,10 @@ name, edge domain and the source's `defaultConsent` (the plugin defaults to `pen
 gives the switch steps. Once `aemMartech.enabled`, the scaffold loads Web SDK eagerly after the CMP
 and the Launch property from `martechDelayed()`. The scaffold refuses an empty orgId, datastream or
 consent, a missing `plugins/martech`, or an enabled `adobe-launch` route for the same property.
-Personalization is not wired.
+
+Target (at.js, or Web SDK rules that render decisions) becomes `target`, off. Once `target.enabled`,
+the scaffold sets `personalization`; it refuses unless `aemMartech` is on and the source renders
+decisions through the Web SDK. at.js activities are an owner move.
 
 ## Verification
 

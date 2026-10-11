@@ -144,6 +144,25 @@ check('aemMartech: a rebuild keeps the owner choices; the handoff lists data-lay
   assert.doesNotMatch(renderHandoff(build([SCRIPTS.launch], { launch: LAUNCH, onetrust: [] })), /Web SDK|owner project/);
 });
 
+check('target: null without evidence; Web SDK decisions or at.js recorded off; a rebuild keeps the owner choice; the handoff says how', () => {
+  assert.equal(build([SCRIPTS.launch], { launch: SDK(), onetrust: [] }).target, null);
+  const ws = { ...SDK(), target: { atjs: null, renderRules: [{ id: 'RL5', name: 'Page view' }], prehiding: true } };
+  const first = build([SCRIPTS.launch], { launch: ws, onetrust: [] });
+  assert.deepEqual(first.target, { atjs: null, webSdk: { renderRules: [{ id: 'RL5', name: 'Page view' }], prehiding: true }, enabled: false });
+  first.target.enabled = true;
+  assert.equal(build([SCRIPTS.launch], { launch: ws, onetrust: [] }, first).target.enabled, true);
+  const md = renderHandoff(build([SCRIPTS.launch], { launch: ws, onetrust: [] }));
+  assert.match(md, /## Personalization \(Target\)[\s\S]*rules `RL5` render them, with a prehiding style[\s\S]*set `target\.enabled`/);
+  assert.doesNotMatch(md, /not wired/);
+  const ext = build([SCRIPTS.launch], { launch: { ...LAUNCH, target: { atjs: 'adobe-target-v2', renderRules: [], prehiding: false } }, onetrust: [] }).target;
+  assert.deepEqual([ext.atjs, ext.webSdk], [{ from: 'launch', extension: 'adobe-target-v2' }, null]);
+  const pageSrc = 'https://www.example.com/etc/at.min.js';
+  const page = build([pageSrc], { launch: null, onetrust: [] });
+  assert.deepEqual(page.target.atjs, { from: 'page', src: pageSrc });
+  assert.ok(!page.otherTags.some((r) => /Target/.test(r)), 'Target has its own section, not otherTags');
+  assert.match(renderHandoff(page), /not routed: it will not load[\s\S]*moving the activities to the Web SDK is an owner project/);
+});
+
 check('readEvidence: a spec knowledge folder (martech.json#evidence) reads as the raw spec-martech folder', () => {
   const dir = mkdtempSync(join(tmpdir(), 'mt-ev-'));
   try {
