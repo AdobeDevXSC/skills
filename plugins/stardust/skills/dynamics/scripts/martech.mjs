@@ -55,13 +55,14 @@ function routesOf(row, scripts, groups) {
 }
 
 function rewriteOf(launch) {
-  if (!launch) return { rules: [], dataElements: [], dataLayer: [] };
+  if (!launch) return { rules: [], dataElements: [], dataLayer: [], dataLayerPaths: [] };
   return {
     rules: launch.rules
       .map((r) => ({ id: r.id, name: r.name, paths: (r.paths || []).filter((p) => /\.html?\b/.test(p)), selectors: r.selectors || [] }))
       .filter((r) => r.paths.length || r.selectors.length),
     dataElements: launch.dataElements.filter((d) => d.selectors?.length).map(({ name, selectors }) => ({ name, selectors })),
-    dataLayer: launch.rules.filter((r) => (r.events || []).some((e) => /datalayer/i.test(e))).map(({ id, name }) => ({ id, name })),
+    dataLayer: launch.rules.filter((r) => (r.events || []).some((e) => /datalayer/i.test(e))).map(({ id, name, pushEvents }) => ({ id, name, events: pushEvents || [] })),
+    dataLayerPaths: [...new Set(launch.dataElements.filter((d) => /datalayer/i.test(d.type || '') && d.source).map((d) => d.source))],
   };
 }
 
@@ -152,6 +153,22 @@ const MODEL = {
   'owner-decision': 'no evidence of consent gating inside the tag manager. Keep the source behaviour (route `category` null), or set a route `category` to a consent group id to load that tag manager only once the group is granted.',
 };
 
+const evName = (e) => (e === '*' ? 'any push' : e ? `\`${e}\`` : 'an event the rule settings do not name');
+
+function dataLayerHandoff({ dataLayer = [], dataLayerPaths = [] }) {
+  if (!dataLayer.length) return [];
+  const count = new Map();
+  dataLayer.forEach((r) => (r.events?.length ? r.events : [null]).forEach((e) => count.set(e, (count.get(e) || 0) + 1)));
+  return [
+    '', '## Data-layer rules', '',
+    `These fire on data-layer pushes; the migrated pages must push the same events: ${[...count].sort((a, b) => b[1] - a[1]).map(([e, n]) => `${evName(e)} (${n})`).join(' · ')}.`,
+    ...(dataLayerPaths.length ? [`Data elements read these data-layer paths: ${dataLayerPaths.map((p) => `\`${p}\``).join(', ')}.`] : []),
+    'Ask the owner for the tagging plan (solution design reference) for each payload; these rules depend on it.',
+    '',
+    ...dataLayer.map((r) => `- rule \`${r.id}\` ${r.name} — listens for ${(r.events?.length ? r.events : [null]).map(evName).join(', ')}`),
+  ];
+}
+
 function webSdkHandoff(a) {
   if (!a) return [];
   const { config: k, extension: x } = a;
@@ -211,9 +228,7 @@ export function renderHandoff(c) {
         ...c.rewrite.dataElements.map((d) => `- data element \`${d.name}\` — selectors ${d.selectors.map((s) => `\`${s}\``).join(', ')}`),
       ]
       : ['Nothing found (or no tag-manager library read).']),
-    ...(c.rewrite.dataLayer?.length
-      ? ['', '## Data-layer rules', '', 'These fire on data-layer pushes; the migrated pages must push the same events:', ...c.rewrite.dataLayer.map((r) => `- rule \`${r.id}\` ${r.name}`)]
-      : []),
+    ...dataLayerHandoff(c.rewrite),
     ...webSdkHandoff(c.aemMartech),
     ...targetHandoff(c.target),
   ].join('\n');

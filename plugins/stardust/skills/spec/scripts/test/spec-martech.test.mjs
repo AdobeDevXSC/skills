@@ -38,6 +38,11 @@ check("parse: the Web SDK extension — version, self-hosted support, instance, 
   assert.equal(parseLaunch(sdk(`{libraryCode:{type:"preinstalled"},instances:[{name:"alloy",defaultConsent:"pending",edgeConfigId:"${DS[0]}"}]}`)).webSdk.library, "preinstalled");
   assert.equal(parseLaunch(js).webSdk, null);
 });
+check("parse: each data-layer rule's push event — named, any push, or not named", () => {
+  const ev = (settings) => `{modulePath:"adobe-client-data-layer/src/lib/events/dataLayerPush.js",settings:${settings}}`;
+  const c = `window._satellite.container={rules:[{id:"RL1",name:"Click",events:[${ev('{specificEvent:"cmp:click",allEvents:!1}')}]},{id:"RL2",name:"Any",events:[${ev('{allEvents:!0}')}]},{id:"RL3",name:"Bare",events:[${ev('{}')}]}]};`;
+  assert.deepEqual(parseLaunch(c).rules.map((r) => r.pushEvents), [["cmp:click"], ["*"], [null]]);
+});
 helpCheck("spec-martech.mjs");
 
 const page = '<html><head><script async src="https://www.googletagmanager.com/gtag/js?id=G-TEST"></script><script>window.dataLayer=[];function gtag(){dataLayer.push(arguments)}</script></head><body><main>x</main></body></html>';

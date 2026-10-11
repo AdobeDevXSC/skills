@@ -115,7 +115,7 @@ const SDK = (ids = [DS[0]], defaultConsent = null) => ({
   orgId: 'TEST@AdobeOrg',
   extensions: ['Core', 'Adobe Experience Platform Web SDK'],
   webSdk: { version: '2.34.2', selfHostable: true, library: 'managed', instances: [{ name: 'alloy', edgeDomain: null, defaultConsent, datastream: { ref: '%DS%', ids }, stagingDatastream: { ref: null, ids: [] } }] },
-  rules: [...LAUNCH.rules, { id: 'RL4', name: 'Cart add', events: ['datalayerPushListener'], paths: [], selectors: [], consentGroups: [] }],
+  rules: [...LAUNCH.rules, { id: 'RL4', name: 'Cart add', events: ['datalayerPushListener'], pushEvents: ['cart:add'], paths: [], selectors: [], consentGroups: [] }],
 });
 
 check('aemMartech: off and null without Web SDK evidence; from the Launch extension otherwise', () => {
@@ -136,7 +136,9 @@ check('aemMartech: a rebuild keeps the owner choices; the handoff lists data-lay
   const next = build([SCRIPTS.launch], { launch: SDK(DS), onetrust: [] }, first).aemMartech;
   assert.deepEqual([next.enabled, next.category, next.config.datastreamId], [true, 'C0002', DS[1]]);
   const md = renderHandoff(build([SCRIPTS.launch], { launch: SDK(DS), onetrust: [] }));
-  assert.match(md, /## Data-layer rules[\s\S]*rule `RL4` Cart add/);
+  assert.match(md, /must push the same events: `cart:add` \(1\)/);
+  assert.match(md, /tagging plan \(solution design reference\)/);
+  assert.match(md, /## Data-layer rules[\s\S]*rule `RL4` Cart add — listens for `cart:add`/);
   assert.match(md, /extension 2\.34\.2 \(managed library, self-hosted build supported\)/);
   assert.match(md, /choose one/);
   assert.match(md, /git subtree add --squash --prefix plugins\/martech/);

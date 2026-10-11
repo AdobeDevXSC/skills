@@ -75,6 +75,18 @@ function targetOf(js) {
   return { atjs, renderRules, prehiding: /prehidingStyle:"[^"]+"/.test(js) };
 }
 
+/** Event names a rule's data-layer push listeners wait for: `*` for any push, null when the settings name none. Pure. */
+function pushEventsOf(b) {
+  return [...new Set([...b.matchAll(/modulePath:"[^"]*\/events\/[^"]*data-?layer[^"]*\.js",settings:/gi)].map((m) => {
+    const at = m.index + m[0].length;
+    if (b[at] !== '{') return null;
+    const s = block(b, at);
+    const named = s.match(/(?:specificEvent|eventName|eventType|event)\s*:\s*"([^"]+)"/);
+    if (named) return named[1];
+    return /allEvents:(?:!0|true)/.test(s) ? '*' : null;
+  }))];
+}
+
 /** Parse a minified Adobe Launch container. Pure. */
 export function parseLaunch(js) {
   const build = (js.match(/buildInfo:\{[^}]*\}/) || [''])[0];
@@ -98,6 +110,7 @@ export function parseLaunch(js) {
     const pathVals = [...b.matchAll(/paths:\[([^\]]*)\]/g)].flatMap((p) => [...p[1].matchAll(/value:"([^"]*)"/g)].map((x) => x[1]));
     return {
       id: m[1], name: m[2], events: [...new Set([...b.matchAll(/modulePath:"[^"]+\/events\/([^"]+)\.js"/g)].map((x) => x[1]))],
+      pushEvents: pushEventsOf(b),
       conditions: [...new Set([...b.matchAll(/modulePath:"[^"]+\/conditions\/([^"]+)\.js"/g)].map((x) => x[1]))],
       paths: pathVals, selectors: [...b.matchAll(/elementSelector:"([^"]*)"/g)].map((x) => x[1]),
       customCode: [...b.matchAll(/source:"(https:\/\/assets\.adobedtm\.com[^"]+)"/g)].map((x) => x[1]),

@@ -39,7 +39,8 @@ and `&consent=accept` grants every category; neither override works on a product
 
 The hand-off lists Launch rules and data elements that read old paths or selectors; the owner
 rewrites them in the tag manager, including the data-layer (`datalayerPushListener`) rules, which
-need the new pages to push the same events. Collector CNAMEs on the new host are an owner item.
+need the new pages to push the same events. Each rule shows the event it listens for, read from
+the rule settings; payload shapes come from the owner's tagging plan. Collector CNAMEs on the new host are an owner item.
 
 ## Web SDK via `aem-martech` (owner switch)
 

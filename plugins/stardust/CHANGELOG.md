@@ -19,7 +19,8 @@ that only fire if the new pages push the same events. None of it was read.
   facts: repo, path, default edge, the source's default consent, required Launch extensions.
 - **`martech-contract.json`** gains `aemMartech`, always `enabled: false`. Its config comes from that evidence.
   Ambiguous datastreams stay null, with the candidates listed. A rebuild keeps the owner's choices.
-- **`martech-handoff.md`** adds a data-layer rule list and a Web SDK section: the values found, the consent default
+- **`martech-handoff.md`** adds a data-layer rule list (each rule's push event, a count per event, and a request for
+  the owner's tagging plan) and a Web SDK section: the values found, the consent default
   to keep (`in` on the source, `pending` in the plugin), missing extensions, and the four switch steps.
 - **`martech-scaffold.mjs`**: with `aemMartech.enabled`, it loads the CMP, then `initMartech`/`martechEager`, with
   lazy/delayed after. The Launch property comes through `launchUrls`. A category grants `collect` on consent.
