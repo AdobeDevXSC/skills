@@ -184,10 +184,21 @@ check('data layer: any tag manager or data-layer global gets the section; unread
   assert.deepEqual([c.tagManagers, c.dataLayers], [['Google Tag Manager'], ['dataLayer', 'digitalData']]);
   const md = renderHandoff(c);
   assert.match(md, /## Data layer\n\nThe source pages expose `dataLayer`, `digitalData`; keep the same global names\./);
-  assert.match(md, /Rules in Google Tag Manager were not read; their triggers and events come from the tagging plan\./);
+  assert.match(md, /Rules in Google Tag Manager were not parsed\. Read each library listed in `martech\/tags\.json`/);
   assert.match(md, /add each push in the block that owns the interaction/);
   assert.doesNotMatch(renderHandoff(buildContract({ dynamics: { pages: { '/': { host: 'x.test', scripts: [] } } }, provenance: {} })), /## Data layer/);
   assert.doesNotMatch(renderHandoff(build([SCRIPTS.launch], { launch: SDK(DS), onetrust: [] })), /Rules in Adobe Launch were not read/);
+});
+check('other tag managers: a custom GTM data-layer name; tagNotes survive a rebuild and replace the not-parsed line', () => {
+  const d = { pages: { '/': { host: 'www.example.com', scripts: ['https://www.googletagmanager.com/gtm.js?id=GTM-TEST&l=gtmDataLayer'] } } };
+  const first = buildContract({ dynamics: d, provenance: {} });
+  assert.deepEqual([first.dataLayers, first.tagNotes], [['gtmDataLayer'], {}]);
+  first.tagNotes['Google Tag Manager'] = '- trigger `addToCart` (custom event) fires the GA4 `add_to_cart` tag';
+  const next = buildContract({ dynamics: d, provenance: {}, previous: first });
+  assert.equal(next.tagNotes['Google Tag Manager'], first.tagNotes['Google Tag Manager']);
+  const md = renderHandoff(next);
+  assert.match(md, /## Google Tag Manager rules \(read from its library\)\n\n- trigger `addToCart`[\s\S]*confirm against the owner's tagging plan/);
+  assert.doesNotMatch(md, /were not parsed/);
 });
 if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }
 console.log('martech: all checks passed');

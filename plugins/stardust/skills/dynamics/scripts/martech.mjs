@@ -3,7 +3,7 @@
  * Inputs: the runtime script URLs dynamics-detect recorded per page, plus spec-martech evidence when present
  * (onetrust.json for consent categories, launch.json for the consent model and the rewrite sheet).
  * Vendor knowledge comes from vendors.json (`cmp`, `loaders`, `plugin`). The CMP, every route and the Web SDK
- * (`aemMartech`) are written disabled; a previous contract's owner choices (`enabled`, `category`, ids) survive a rebuild.
+ * (`aemMartech`) are written disabled; a previous contract's owner choices (`enabled`, `category`, ids) and `tagNotes` survive a rebuild.
  */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -123,6 +123,7 @@ function keepOwnerChoices(contract, previous) {
     Object.keys(am.config).forEach((k) => { if (wasAm.config?.[k] != null) am.config[k] = wasAm.config[k]; });
   }
   if (contract.target && previous.target) contract.target.enabled = !!previous.target.enabled;
+  contract.tagNotes = { ...previous.tagNotes };
   return contract;
 }
 
@@ -145,7 +146,9 @@ export function buildContract({ dynamics, martech = { launch: null, onetrust: []
     routes,
     otherTags: seen.filter((v) => ['T', 'A'].includes(v.class) && v !== cmpRow && !routed.has(v.role.replace(/^tag manager: /, '')) && !(target && v.target)).map((v) => v.role),
     tagManagers: seen.filter((v) => /^tag manager: /.test(v.role)).map((v) => v.role.replace(/^tag manager: /, '')),
-    dataLayers: DATA_LAYERS.filter((k) => pages.some((p) => p.cms?.[k] !== undefined)),
+    dataLayers: [...new Set([...DATA_LAYERS.filter((k) => pages.some((p) => p.cms?.[k] !== undefined)),
+      ...scripts.map((x) => /googletagmanager\.com\/(?:gtm\.js|gtag\/js)\?.*[?&]l=([\w$]+)/.exec(x)?.[1]).filter(Boolean)])],
+    tagNotes: {},
     rewrite: rewriteOf(martech.launch),
     aemMartech: aemMartechOf(martech.launch, scripts, routes),
     target,
@@ -160,21 +163,28 @@ const MODEL = {
 
 const evName = (e) => (e === '*' ? 'any push' : e ? `\`${e}\`` : 'an event the rule settings do not name');
 
-function dataLayerHandoff({ rewrite: { library = null, dataLayer = [], dataLayerPaths = [] } = {}, tagManagers = [], dataLayers = [] }) {
+function dataLayerHandoff({ rewrite: { library = null, dataLayer = [], dataLayerPaths = [] } = {}, tagManagers = [], dataLayers = [], tagNotes = {} }) {
   if (!dataLayer.length && !tagManagers.length && !dataLayers.length) return [];
   const count = new Map();
   dataLayer.forEach((r) => (r.events?.length ? r.events : [null]).forEach((e) => count.set(e, (count.get(e) || 0) + 1)));
-  const unread = tagManagers.filter((t) => t !== library);
+  const unread = tagManagers.filter((t) => t !== library && !tagNotes[t]);
   return [
     '', '## Data layer', '',
     ...(dataLayers.length ? [`The source pages expose ${dataLayers.map((d) => `\`${d}\``).join(', ')}; keep the same global names.`] : []),
     ...(dataLayer.length ? [`${library} rules fire on data-layer pushes; the migrated pages must push the same events: ${[...count].sort((a, b) => b[1] - a[1]).map(([e, n]) => `${evName(e)} (${n})`).join(' · ')}.`] : []),
     ...(dataLayerPaths.length ? [`Data elements read these data-layer paths: ${dataLayerPaths.map((p) => `\`${p}\``).join(', ')}.`] : []),
-    ...(unread.length ? [`Rules in ${unread.join(', ')} were not read; their triggers and events come from the tagging plan.`] : []),
+    ...(unread.length ? [`Rules in ${unread.join(', ')} were not parsed. Read each library listed in \`martech/tags.json\` and record what it finds in the contract's \`tagNotes\`, keyed by tag manager; until then their triggers and events come from the tagging plan.`] : []),
     'Ask the owner for the tagging plan (solution design reference): each event, its payload and the interaction that pushes it. With it, add each push in the block that owns the interaction.',
     ...(dataLayer.length ? [''] : []),
     ...dataLayer.map((r) => `- rule \`${r.id}\` ${r.name} — listens for ${(r.events?.length ? r.events : [null]).map(evName).join(', ')}`),
   ];
+}
+
+function tagNotesHandoff(notes = {}) {
+  return Object.entries(notes).filter(([, md]) => md).flatMap(([vendor, md]) => [
+    '', `## ${vendor} rules (read from its library)`, '', String(md).trim(), '',
+    'Read by the model from the saved library, not parsed; confirm against the owner\'s tagging plan.',
+  ]);
 }
 
 function webSdkHandoff(a) {
@@ -237,6 +247,7 @@ export function renderHandoff(c) {
       ]
       : ['Nothing found (or no tag-manager library read).']),
     ...dataLayerHandoff(c),
+    ...tagNotesHandoff(c.tagNotes),
     ...webSdkHandoff(c.aemMartech),
     ...targetHandoff(c.target),
   ].join('\n');

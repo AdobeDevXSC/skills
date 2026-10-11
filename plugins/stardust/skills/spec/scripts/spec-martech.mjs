@@ -3,12 +3,14 @@
  * spec-martech.mjs — S9 martech from public artefacts: security headers + CSP of the origin; script/iframe hosts
  * and their reach (spec-parse signals) classified with the dynamics vendor table; the Adobe Launch library when
  * present (extensions, the Web SDK extension's instances and datastreams, Target via at.js or Web SDK decisions, rules with page-path conditions and DOM
- * selectors, data elements with their data-layer paths, custom-code files and the hosts they load); OneTrust geo rule sets and cookie categories when present.
+ * selectors, data elements with their data-layer paths, custom-code files and the hosts they load); OneTrust geo rule sets and cookie categories when present;
+ * every other tag manager's library (GTM and gtag by container id, Tealium, Ensighten, ...) saved unparsed for the model to read.
  *
- *   node spec-martech.mjs [--config <file>] [--no-custom-code]
- *   node spec-martech.mjs --urls <url,url,...> [--out stardust/martech] [--no-custom-code]
+ *   node spec-martech.mjs [--config <file>] [--no-custom-code] [--no-tag-libraries]
+ *   node spec-martech.mjs --urls <url,url,...> [--out stardust/martech] [--no-custom-code] [--no-tag-libraries]
  *
- * Writes <work>/martech/headers.json, vendors.json, launch.json (+ launch.js, rc/ for custom code), onetrust.json.
+ * Writes <work>/martech/headers.json, vendors.json, launch.json (+ launch.js, rc/ for custom code), onetrust.json,
+ * tags.json (+ tags/ with each other tag-manager library).
  * --urls runs without a spec: the first URL is the origin's home, each URL's server HTML gives its page signals.
  * Everything read here is public (what any browser downloads); no credential is used.
  */
@@ -121,6 +123,23 @@ export function parseLaunch(js) {
   return { build, orgId, extensions: [...new Set(extensions)], webSdk: webSdkOf(js), target: targetOf(js), dataElements, rules };
 }
 
+/**
+ * Libraries of tag managers other than Launch: script srcs the vendor table classes as a tag manager, plus GTM and
+ * gtag container ids from inline snippets (their srcs lose the id). At most 10. Pure.
+ */
+export function tagLibraries(sigs, vendorFor) {
+  const urls = new Map();
+  for (const s of sigs) {
+    (s.tagIds || []).forEach((id) => urls.set(`https://www.googletagmanager.com/${id.startsWith('GTM-') ? 'gtm.js' : 'gtag/js'}?id=${id}`, 'Google Tag Manager'));
+    s.scripts.forEach((src) => {
+      const u = src.startsWith('//') ? `https:${src}` : src; if (!/^https?:/.test(u)) return;
+      const role = vendorFor(new URL(u).hostname)?.role || '';
+      if (/^tag manager: /.test(role) && !/Adobe Launch|Google Tag Manager/.test(role)) urls.set(u, role.replace(/^tag manager: /, ''));
+    });
+  }
+  return [...urls].slice(0, 10).map(([url, vendor]) => ({ vendor, url, file: `${new URL(url).hostname}-${(new URL(url).pathname.split('/').pop() || 'tag').replace(/\.js$/, '')}${new URL(url).searchParams.get('id') ? `-${new URL(url).searchParams.get('id')}` : ''}.js` }));
+}
+
 async function sources() {
   const urls = list(arg('urls'));
   if (!urls.length) {
@@ -173,6 +192,14 @@ async function main() {
     }
     writeJSON(join(out, 'launch.json'), launch);
   }
+  // other tag managers: saved unparsed, for the model to read
+  const tags = flag('no-tag-libraries') ? [] : (await pool(tagLibraries(sigs, vendorFor), 4, async (t) => ({ ...t, js: await get(t.url) })))
+    .filter((t) => t.js && t.js.length < 5e6);
+  if (tags.length) {
+    mkdirSync(join(out, 'tags'), { recursive: true });
+    tags.forEach((t) => writeFileSync(join(out, 'tags', t.file), t.js));
+    writeJSON(join(out, 'tags.json'), tags.map(({ vendor, url, file, js }) => ({ vendor, url, file: `tags/${file}`, bytes: js.length })));
+  }
   // OneTrust: domain scripts from pages or Launch custom code
   const otIds = new Set();
   sigs.forEach((s) => (s.otDomainScripts || []).filter((x) => !x.endsWith('-test')).forEach((x) => otIds.add(x)));
@@ -191,7 +218,7 @@ async function main() {
     onetrust.push({ domainScript: id, version: conf.Version || null, ruleSets: sets });
   }
   if (onetrust.length) writeJSON(join(out, 'onetrust.json'), onetrust);
-  log(`${vendors.length} third-party/first-party hosts; Launch ${launch ? `${launch.rules.length} rules, ${launch.dataElements.length} data elements` : 'not found'}; OneTrust ${onetrust.length} domain script(s)`);
+  log(`${vendors.length} third-party/first-party hosts; Launch ${launch ? `${launch.rules.length} rules, ${launch.dataElements.length} data elements` : 'not found'}; ${tags.length} other tag-manager librar${tags.length === 1 ? 'y' : 'ies'} saved; OneTrust ${onetrust.length} domain script(s)`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main().catch((e) => { console.error(e.stack || e.message); process.exit(1); });
