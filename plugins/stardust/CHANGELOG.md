@@ -23,7 +23,8 @@ that only fire if the new pages push the same events. None of it was read.
   rules with their push events and a count per event, the tag managers whose rules were not parsed, and a request for
   the owner's tagging plan. `spec-martech.mjs` saves every other tag-manager library (GTM and gtag by container id,
   read from inline snippets; Tealium, Ensighten, ... by src) to `martech/tags/`; the model reads them into the
-  contract's `tagNotes`, which survive a rebuild and render as their own section. A custom GTM data-layer name
+  contract's `tagNotes` in Launch's shape (rules, data elements, consent groups, each citing `from`), which survive a
+  rebuild and render in the same rewrite, data-layer and consent sections, marked as read by the model. A custom GTM data-layer name
   (`l=`) is kept. Its header adds `dynamics-check.mjs` after the scaffold re-run. It also adds a Web SDK
   section: the values found, the consent default to keep (`in` on the source, `pending` in the plugin), missing extensions, and the four switch steps.
 - **`martech-scaffold.mjs`**: with `aemMartech.enabled`, it loads the CMP, then `initMartech`/`martechEager`, with

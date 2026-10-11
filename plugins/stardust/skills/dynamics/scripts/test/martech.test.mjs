@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildContract, readEvidence, renderHandoff } from '../martech.mjs';
+import { modelRead, buildContract, readEvidence, renderHandoff } from '../martech.mjs';
 
 let failures = 0;
 function check(name, fn) {
@@ -189,16 +189,34 @@ check('data layer: any tag manager or data-layer global gets the section; unread
   assert.doesNotMatch(renderHandoff(buildContract({ dynamics: { pages: { '/': { host: 'x.test', scripts: [] } } }, provenance: {} })), /## Data layer/);
   assert.doesNotMatch(renderHandoff(build([SCRIPTS.launch], { launch: SDK(DS), onetrust: [] })), /Rules in Adobe Launch were not read/);
 });
-check('other tag managers: a custom GTM data-layer name; tagNotes survive a rebuild and replace the not-parsed line', () => {
+check('other tag managers: a custom GTM data-layer name; tagNotes read in Launch shape render in the same sections', () => {
   const d = { pages: { '/': { host: 'www.example.com', scripts: ['https://www.googletagmanager.com/gtm.js?id=GTM-TEST&l=gtmDataLayer'] } } };
   const first = buildContract({ dynamics: d, provenance: {} });
-  assert.deepEqual([first.dataLayers, first.tagNotes], [['gtmDataLayer'], {}]);
-  first.tagNotes['Google Tag Manager'] = '- trigger `addToCart` (custom event) fires the GA4 `add_to_cart` tag';
+  assert.deepEqual([first.dataLayers, first.tagNotes, first.consent.model], [['gtmDataLayer'], {}, 'owner-decision']);
+  first.tagNotes['Google Tag Manager'] = {
+    rules: [
+      { name: 'GA4 add_to_cart', events: ['addToCart'], consentGroups: ['C0004'], from: 'tags/gtm.js: trigger 12 (customEvent addToCart)' },
+      { name: 'Promo click', selectors: ['.promo a'], paths: ['/offers.html'], from: 'tags/gtm.js: trigger 7 (linkClick)' },
+      { name: 'uncited', events: ['x'] },
+    ],
+    dataElements: [{ name: 'DLV - product', source: 'ecommerce.items', selectors: ['h1.title'], from: 'tags/gtm.js: variable 3' }],
+    notes: 'Container also loads a heatmap tag on every page.',
+  };
   const next = buildContract({ dynamics: d, provenance: {}, previous: first });
-  assert.equal(next.tagNotes['Google Tag Manager'], first.tagNotes['Google Tag Manager']);
+  assert.deepEqual(next.tagNotes, first.tagNotes);
+  assert.deepEqual([next.consent.model, next.consent.modelFrom], ['per-tag', 'tagNotes']);
   const md = renderHandoff(next);
-  assert.match(md, /## Google Tag Manager rules \(read from its library\)\n\n- trigger `addToCart`[\s\S]*confirm against the owner's tagging plan/);
-  assert.doesNotMatch(md, /were not parsed/);
+  assert.match(md, /\*\*Model `per-tag` \(read by the model, not parsed\):\*\*/);
+  assert.match(md, /- Google Tag Manager rule GA4 add_to_cart checks `C0004` — read by the model at tags\/gtm\.js: trigger 12/);
+  assert.match(md, /- Google Tag Manager rule Promo click — paths `\/offers\.html` — selectors `\.promo a` — read by the model at tags\/gtm\.js: trigger 7/);
+  assert.match(md, /- Google Tag Manager data element DLV - product — selectors `h1\.title` — read by the model at tags\/gtm\.js: variable 3/);
+  assert.match(md, /Google Tag Manager \(read by the model, not parsed\) rules fire on data-layer pushes; the migrated pages must push the same events: `addToCart` \(1\)\./);
+  assert.match(md, /Data elements read these data-layer paths: `ecommerce\.items`\./);
+  assert.match(md, /- Google Tag Manager rule GA4 add_to_cart — listens for `addToCart` — read by the model at/);
+  assert.match(md, /\*\*Google Tag Manager:\*\* Container also loads a heatmap tag/);
+  assert.match(md, /1 `tagNotes` entry without a name or a `from` citation was left out/);
+  assert.doesNotMatch(md, /were not parsed|uncited/);
+  assert.equal(modelRead({ T: 'free text only' }).rules.length, 0);
 });
 if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }
 console.log('martech: all checks passed');

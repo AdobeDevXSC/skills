@@ -41,9 +41,11 @@ The hand-off lists Launch rules and data elements that read old paths or selecto
 rewrites them in the tag manager, including the data-layer (`datalayerPushListener`) rules, which
 need the new pages to push the same events. Each rule shows the event it listens for, read from
 the rule settings; payload shapes come from the owner's tagging plan. Other tag managers (GTM, Tealium, ...)
-are not parsed: `spec-martech.mjs` saves each library, listed in `martech/tags.json`. Read them and write into the
-contract's `tagNotes`, keyed by tag manager, the rules that read old selectors or paths, the data-layer events
-they listen for and any consent checks, then rebuild; notes survive a rebuild and the tagging plan still decides. Collector CNAMEs on the new host are an owner item.
+are not parsed: `spec-martech.mjs` saves each library, listed in `martech/tags.json`. Read them (or write a
+throwaway extractor in the work folder) into the contract's `tagNotes`, keyed by tag manager, in Launch's shape:
+`rules` (`name`, `paths`, `selectors`, `events`, `consentGroups`), `dataElements` (`name`, `selectors`, `source`) and
+free `notes`. Every entry cites where in the library it was read (`from`); uncited ones are dropped. Rebuild: they
+survive, render in the same sections as Launch's marked "read by the model", and the tagging plan still decides. Collector CNAMEs on the new host are an owner item.
 
 ## Web SDK via `aem-martech` (owner switch)
 

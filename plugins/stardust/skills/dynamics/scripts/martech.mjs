@@ -4,6 +4,9 @@
  * (onetrust.json for consent categories, launch.json for the consent model and the rewrite sheet).
  * Vendor knowledge comes from vendors.json (`cmp`, `loaders`, `plugin`). The CMP, every route and the Web SDK
  * (`aemMartech`) are written disabled; a previous contract's owner choices (`enabled`, `category`, ids) and `tagNotes` survive a rebuild.
+ * `tagNotes` is what the model read from a tag-manager library no script parses, keyed by tag manager, in Launch's shape:
+ * { rules: [{ name, paths, selectors, events, consentGroups, from }], dataElements: [{ name, selectors, source, from }], notes }.
+ * `from` cites where in the saved library the entry was read; entries without it are dropped.
  */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -124,7 +127,27 @@ function keepOwnerChoices(contract, previous) {
   }
   if (contract.target && previous.target) contract.target.enabled = !!previous.target.enabled;
   contract.tagNotes = { ...previous.tagNotes };
+  const read = modelRead(contract.tagNotes);
+  if (contract.consent.model === 'owner-decision' && read.rules.some((r) => r.consentGroups.length)) Object.assign(contract.consent, { model: 'per-tag', modelFrom: 'tagNotes' });
   return contract;
+}
+
+const list = (v) => (Array.isArray(v) ? v.map(String) : []);
+/** tagNotes → the cited rules and data elements in Launch's shape, each tagged with its tag manager, plus the uncited count. */
+export function modelRead(notes = {}) {
+  const out = { rules: [], dataElements: [], dropped: 0 };
+  for (const [vendor, n] of Object.entries(notes)) {
+    if (!n || typeof n !== 'object') continue;
+    for (const [key, rows] of [['rules', n.rules], ['dataElements', n.dataElements]]) {
+      for (const r of Array.isArray(rows) ? rows : []) {
+        if (!r?.from || !r?.name) { out.dropped += 1; continue; }
+        out[key].push(key === 'rules'
+          ? { vendor, name: String(r.name), paths: list(r.paths), selectors: list(r.selectors), events: list(r.events), consentGroups: list(r.consentGroups), from: String(r.from) }
+          : { vendor, name: String(r.name), selectors: list(r.selectors), source: r.source ? String(r.source) : null, from: String(r.from) });
+      }
+    }
+  }
+  return out;
 }
 
 const DATA_LAYERS = ['adobeDataLayer', 'dataLayer', 'digitalData', 'utag_data'];
@@ -163,28 +186,46 @@ const MODEL = {
 
 const evName = (e) => (e === '*' ? 'any push' : e ? `\`${e}\`` : 'an event the rule settings do not name');
 
-function dataLayerHandoff({ rewrite: { library = null, dataLayer = [], dataLayerPaths = [] } = {}, tagManagers = [], dataLayers = [], tagNotes = {} }) {
-  if (!dataLayer.length && !tagManagers.length && !dataLayers.length) return [];
+const BY_MODEL = ' (read by the model, not parsed)';
+const where = (r) => `${r.paths.length ? ` — paths ${r.paths.map((p) => `\`${p}\``).join(', ')}` : ''}${r.selectors.length ? ` — selectors ${r.selectors.map((s) => `\`${s}\``).join(', ')}` : ''}`;
+const cite = (r) => ` — read by the model at ${r.from}`;
+const eventsLine = (who, rules) => {
   const count = new Map();
-  dataLayer.forEach((r) => (r.events?.length ? r.events : [null]).forEach((e) => count.set(e, (count.get(e) || 0) + 1)));
+  rules.forEach((r) => (r.events?.length ? r.events : [null]).forEach((e) => count.set(e, (count.get(e) || 0) + 1)));
+  return `${who} rules fire on data-layer pushes; the migrated pages must push the same events: ${[...count].sort((a, b) => b[1] - a[1]).map(([e, n]) => `${evName(e)} (${n})`).join(' · ')}.`;
+};
+
+function dataLayerHandoff({ rewrite: { library = null, dataLayer = [], dataLayerPaths = [] } = {}, tagManagers = [], dataLayers = [], tagNotes = {} }) {
+  const read = modelRead(tagNotes);
+  const pushed = read.rules.filter((r) => r.events.length);
+  const paths = [...new Set([...dataLayerPaths, ...read.dataElements.map((d) => d.source).filter(Boolean)])];
+  if (!dataLayer.length && !pushed.length && !tagManagers.length && !dataLayers.length) return [];
   const unread = tagManagers.filter((t) => t !== library && !tagNotes[t]);
+  const vendors = [...new Set(pushed.map((r) => r.vendor))];
   return [
     '', '## Data layer', '',
     ...(dataLayers.length ? [`The source pages expose ${dataLayers.map((d) => `\`${d}\``).join(', ')}; keep the same global names.`] : []),
-    ...(dataLayer.length ? [`${library} rules fire on data-layer pushes; the migrated pages must push the same events: ${[...count].sort((a, b) => b[1] - a[1]).map(([e, n]) => `${evName(e)} (${n})`).join(' · ')}.`] : []),
-    ...(dataLayerPaths.length ? [`Data elements read these data-layer paths: ${dataLayerPaths.map((p) => `\`${p}\``).join(', ')}.`] : []),
-    ...(unread.length ? [`Rules in ${unread.join(', ')} were not parsed. Read each library listed in \`martech/tags.json\` and record what it finds in the contract's \`tagNotes\`, keyed by tag manager; until then their triggers and events come from the tagging plan.`] : []),
+    ...(dataLayer.length ? [eventsLine(library, dataLayer)] : []),
+    ...vendors.map((v) => eventsLine(`${v}${BY_MODEL}`, pushed.filter((r) => r.vendor === v))),
+    ...(paths.length ? [`Data elements read these data-layer paths: ${paths.map((p) => `\`${p}\``).join(', ')}.`] : []),
+    ...(unread.length ? [`Rules in ${unread.join(', ')} were not parsed. Read each library listed in \`martech/tags.json\` and record its rules and data elements in the contract's \`tagNotes\`, keyed by tag manager, each citing where it was read (\`from\`); until then their triggers and events come from the tagging plan.`] : []),
     'Ask the owner for the tagging plan (solution design reference): each event, its payload and the interaction that pushes it. With it, add each push in the block that owns the interaction.',
-    ...(dataLayer.length ? [''] : []),
+    ...(dataLayer.length || pushed.length ? [''] : []),
     ...dataLayer.map((r) => `- rule \`${r.id}\` ${r.name} — listens for ${(r.events?.length ? r.events : [null]).map(evName).join(', ')}`),
+    ...pushed.map((r) => `- ${r.vendor} rule ${r.name} — listens for ${r.events.map(evName).join(', ')}${cite(r)}`),
   ];
 }
 
 function tagNotesHandoff(notes = {}) {
-  return Object.entries(notes).filter(([, md]) => md).flatMap(([vendor, md]) => [
-    '', `## ${vendor} rules (read from its library)`, '', String(md).trim(), '',
-    'Read by the model from the saved library, not parsed; confirm against the owner\'s tagging plan.',
-  ]);
+  const { dropped } = modelRead(notes);
+  const free = Object.entries(notes).map(([v, n]) => [v, typeof n === 'string' ? n : n?.notes]).filter(([, md]) => md);
+  if (!free.length && !dropped) return [];
+  return [
+    '', '## Tag-manager notes (read by the model, not parsed)',
+    ...free.flatMap(([vendor, md]) => ['', `**${vendor}:** ${String(md).trim()}`]),
+    ...(dropped ? ['', `${dropped} \`tagNotes\` ${dropped === 1 ? 'entry' : 'entries'} without a name or a \`from\` citation ${dropped === 1 ? 'was' : 'were'} left out; add where in the library each was read.`] : []),
+    '', 'Confirm everything read by the model against the owner\'s tagging plan.',
+  ];
 }
 
 function webSdkHandoff(a) {
@@ -216,7 +257,10 @@ function targetHandoff(t) {
 }
 
 export function renderHandoff(c) {
-  const { cmp, model, categories, ruleSets } = c.consent;
+  const { cmp, model, categories, ruleSets, modelFrom } = c.consent;
+  const read = modelRead(c.tagNotes);
+  const rewrites = read.rules.filter((r) => r.paths.length || r.selectors.length);
+  const readEls = read.dataElements.filter((d) => d.selectors.length);
   const id = cmp && Object.entries(cmp.attrs)[0];
   return [
     '# Martech hand-off',
@@ -227,7 +271,8 @@ export function renderHandoff(c) {
     '',
     `- **CMP:** ${cmp ? `${cmp.vendor} · \`${id[0]}\` = ${id[1] ? `\`${id[1]}\`` : '**not found — copy it from the CMP admin into the contract**'}` : 'none detected'}`,
     ...(cmp?.viaTagManager ? ['- **The tag manager injects the CMP on the source.** Leave `consent.cmp` disabled unless you remove that rule; enabling both loads it twice.'] : []),
-    `- **Model \`${model}\`:** ${MODEL[model]}`,
+    `- **Model \`${model}\`${modelFrom ? BY_MODEL : ''}:** ${MODEL[model]}`,
+    ...read.rules.filter((r) => r.consentGroups.length).map((r) => `  - ${r.vendor} rule ${r.name} checks ${r.consentGroups.map((g) => `\`${g}\``).join(', ')}${cite(r)}`),
     categories.length ? `- **Categories** (default rule set${ruleSets > 1 ? ` of ${ruleSets} geo rule sets — the CMP applies them, nothing to port` : ''}): ${categories.map((g) => `\`${g.id}\` ${g.name} (${g.status})`).join(' · ')}` : '- **Categories:** no CMP configuration read — run `spec-martech.mjs` first, or decide categories with the owner.',
     '',
     '## Routes',
@@ -239,11 +284,13 @@ export function renderHandoff(c) {
     '',
     '## Rewrite before go-live',
     '',
-    ...(c.rewrite.rules.length || c.rewrite.dataElements.length
+    ...(c.rewrite.rules.length || c.rewrite.dataElements.length || rewrites.length || readEls.length
       ? [
         'These read the old URLs or DOM and will not match the migrated pages:',
-        ...c.rewrite.rules.map((r) => `- rule \`${r.id}\` ${r.name}${r.paths.length ? ` — paths ${r.paths.map((p) => `\`${p}\``).join(', ')}` : ''}${r.selectors.length ? ` — selectors ${r.selectors.map((s) => `\`${s}\``).join(', ')}` : ''}`),
+        ...c.rewrite.rules.map((r) => `- rule \`${r.id}\` ${r.name}${where(r)}`),
         ...c.rewrite.dataElements.map((d) => `- data element \`${d.name}\` — selectors ${d.selectors.map((s) => `\`${s}\``).join(', ')}`),
+        ...rewrites.map((r) => `- ${r.vendor} rule ${r.name}${where(r)}${cite(r)}`),
+        ...readEls.map((d) => `- ${d.vendor} data element ${d.name} — selectors ${d.selectors.map((s) => `\`${s}\``).join(', ')}${cite(d)}`),
       ]
       : ['Nothing found (or no tag-manager library read).']),
     ...dataLayerHandoff(c),
