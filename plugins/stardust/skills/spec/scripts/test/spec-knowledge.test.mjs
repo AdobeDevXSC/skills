@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// skills/spec/scripts/test/spec-knowledge.test.mjs — EDS paths, bands, outcomes, retired reach kinds, answers, the index yaml; a fixture run end to end: urls, blocks, reach, impact, findings, answers, bad links grouped by target, helix-query.yaml, a stable rerun.
+// skills/spec/scripts/test/spec-knowledge.test.mjs — EDS paths, bands, outcomes, retired reach kinds, answers, redirect entries, the index yaml; a fixture run end to end: urls, blocks, reach, impact, findings, answers, bad links grouped by target, helix-query.yaml, a stable rerun.
 // Run: node plugins/stardust/skills/spec/scripts/test/spec-knowledge.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -16,9 +16,13 @@ const helpCheck = (script) => check(`${script} --help prints usage and writes no
   assert.equal(r.status, 0); assert.ok(r.stdout.includes(script), "usage names the script");
   assert.deepEqual(readdirSync(cwd), []); rmSync(cwd, { recursive: true });
 });
-import { archetypes, band, indexYaml, latestAnswers, offVocabulary, outcome, reachRule, servedUrls } from "../spec-knowledge.mjs";
+import { archetypes, band, indexYaml, latestAnswers, needsEntry, offVocabulary, outcome, reachRule, servedUrls } from "../spec-knowledge.mjs";
 import { deliveredUrl } from "../../../deploy/scripts/eds-path.mjs";
 
+check("needsEntry: dropping .html, an index name or a trailing slash is the rule; case, characters and moves need an entry", () => {
+  assert.equal(needsEntry("/en/a.html", "/en/a"), 0); assert.equal(needsEntry("/en/news.html", "/en/news/"), 0); assert.equal(needsEntry("/en/index.html", "/en/"), 0);
+  assert.equal(needsEntry("/en/Products.html", "/en/products"), 1); assert.equal(needsEntry("/en/jobs---hr.html", "/en/jobs-hr"), 1); assert.equal(needsEntry("/en/a_b.html", "/en/a-b"), 1);
+});
 check("band", () => { assert.equal(band(0), "none"); assert.equal(band(500), "low"); assert.equal(band(5000), "medium"); assert.equal(band(50000), "high"); });
 check("outcome", () => { assert.equal(outcome({ status: 200 }), "page"); assert.equal(outcome({ status: 301, final_status: 404 }), "redirect-broken"); assert.equal(outcome({ error: "redirect loop" }), "loop"); assert.equal(outcome({ status: 410 }), "http-410"); });
 check("reach: the rule format; sql:, url:, bvariant: are retired", () => { assert.deepEqual(reachRule("live sitemap block:hero"), ["live", "sitemap", "block:hero"]); assert.throws(() => reachRule("sql:SELECT 1"), /retired/); assert.throws(() => reachRule("url:/a"), /retired/); });
@@ -76,11 +80,11 @@ put(W("map", "variants.json"), [{ template: "page", code: "page#1", pages: 2, co
 put(D("judgement", "catalog.json"), { blocks: { hero: { kind: "block", family: "hero", description: "Hero", aem: ["banner"], reference: "hero", verdict: "reuse" }, cards: { kind: "block", family: "grid", description: "Cards", aem: ["tiles"], reference: "cards", verdict: "new" }, header: { kind: "global", family: "other", description: "Header", verdict: "variant" }, footer: { kind: "global", family: "other", description: "Footer", verdict: "variant" } } });
 put(D("judgement", "implementation.json"), {
   features: [{ id: "player", class: "V", name: "Player", disposition: "embed-passthrough", reproducibility: "self", reach: "live sitemap signal:script:*player*", decisions: ["Q-1"] }],
-  open_questions: [{ id: "Q-1", area: "Media", owner: "stakeholder", question: "Keep the player?", options: ["yes", "no"], default: "yes", impact: "features[player].reach_pages" },
+  open_questions: [{ id: "Q-1", area: "Media", owner: "stakeholder", question: "Keep the player?", options: ["yes", "no"], default: "yes", default_option: 0, impact: "features[player].reach_pages" },
     { id: "Q-2", area: "Scope", owner: "stakeholder", question: "Empty pages?", default: "migrate", impact: "urls sitemap flag=empty" }],
   query_indexes: [{ name: "default", include: ["/en/**"], exclude: ["/nav"], properties: ["title"] }],
 });
-put(D("judgement", "findings.json"), [{ title: "Reuse.", text: "{{urls live sitemap !verdict:new}} of {{urls live sitemap}} live pages need no new block." }]);
+put(D("judgement", "findings.json"), [{ title: "Reuse.", text: "{{urls live sitemap !verdict:new}} of {{urls live sitemap}} live pages need no new block.", chapter: "build", rank: 1 }]);
 put(D("judgement", "search-probes.json"), [{ term: "tennis", expectCount: 12, expectTitles: ["A"], feature: "site-search", path: "/en/search", param: "q" }]);
 put(W("chrome", "header.json"), { url: `${O}/`, at: "2026-10-09T10:00:00Z", widths: { 1440: { controls: [{ role: "toggle", kind: "menu", actions: { hover: { opened: true, panel: { links: [{ text: "A", href: "/a" }] } } } }] } } });
 put(D("judgement", "answers.json"), [{ question: "Q-2", answer: "retire them", by: "owner", at: "2026-10-08" }]);
@@ -98,9 +102,11 @@ check("page blocks carry chrome globals around the page's blocks", () => assert.
 check("blocks: counts on sitemap pages only, variants with verdicts", () => { const b = Object.fromEntries(KJ("blocks.json").map((x) => [x.name, x])); assert.equal(b.hero.url_count, 1); assert.equal(b.cards.variants[0].verdict, "new"); });
 check("feature reach and question impact are computed", () => { assert.equal(KJ("features.json")[0].reach_pages, 1); assert.deepEqual(KJ("open-questions.json").map((q) => q.impact), [1, 1]); });
 check("answers replace the default; the default stays recorded", () => { const q = KJ("open-questions.json")[1]; assert.equal(q.effective, "retire them"); assert.equal(q.default_assumption, "migrate"); assert.equal(KJ("open-questions.json")[0].effective, "yes"); });
-check("findings: plain text with computed numbers", () => assert.deepEqual(KJ("findings.json"), [{ title: "Reuse.", text: "1 of 2 live pages need no new block.", numbers: [1, 2] }]));
+check("findings: plain text with computed numbers, in their chapter and rank", () => assert.deepEqual(KJ("findings.json"), [{ title: "Reuse.", text: "1 of 2 live pages need no new block.", numbers: [1, 2], chapter: "build", rank: 1 }]));
+check("open questions name the option their default is; none when it is not one of them", () => assert.deepEqual(KJ("open-questions.json").map((q) => q.default_option), [0, null]));
 check("redirects, broken, bad links grouped by target", () => {
   assert.equal(KL("redirects.jsonl").filter((x) => x.kind === "legacy").length, 1);
+  assert.deepEqual(KL("redirects.jsonl").map((x) => [x.kind, x.needs_entry]), [["legacy", null], ["migration", 0], ["migration", 0], ["migration", 0]], "dropping .html is the rule: no own entry");
   assert.deepEqual(KL("redirects.jsonl").filter((x) => x.kind === "migration").map((x) => [x.src, x.target]), [["/en/a.html", "/en/a"], ["/en/b.html", "/en/b"], ["/en/c.html", "/en/c"]], "a .html path that EDS drops gets its row");
   assert.equal(KL("broken.jsonl")[0].note, "sitemap URL redirects into a dead page");
   assert.deepEqual(KL("bad-links.jsonl"), [{ to_url: `${O}/en/old.html`, main: [1], chrome: [2] }]);
@@ -112,6 +118,14 @@ check("no viewer concerns in the output", () => { const s = KJ("site.json"); ass
 check("a rerun writes the same files (apart from the build stamp)", () => {
   const snap = () => Object.fromEntries(readdirSync(D("knowledge")).map((f) => [f, K(f).replace(/"built_at": "[^"]+"/, "")]));
   const a = snap(); const r2 = run(); assert.equal(r2.status, 0); assert.deepEqual(snap(), a);
+});
+check("a default_option outside the options, or a chapter outside the story, stops the stage and names it", () => {
+  const impl = JSON.parse(readFileSync(D("judgement", "implementation.json"), "utf8")); const keep = structuredClone(impl);
+  impl.open_questions[0].default_option = 2; put(D("judgement", "implementation.json"), impl);
+  let r = run(); assert.equal(r.status, 1); assert.match(r.stderr, /Q-1: default_option 2/);
+  put(D("judgement", "implementation.json"), keep);
+  put(D("judgement", "findings.json"), [{ title: "x", text: "y", chapter: "epilogue" }]);
+  r = run(); assert.equal(r.status, 1); assert.match(r.stderr, /chapter "epilogue"/);
 });
 check("a rule that cannot be computed stops the stage and names it", () => {
   put(D("judgement", "findings.json"), [{ title: "x", text: "{{blocks[absent].url_count}}" }]);

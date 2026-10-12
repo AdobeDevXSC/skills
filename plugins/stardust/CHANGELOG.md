@@ -4,6 +4,26 @@ This file starts at 0.14.0. Prior versions (0.3.0 – 0.13.1) are documented in
 git history only (plus the branch-scoped notes in
 `CHANGELOG-redesign-adobecom.md` and `CHANGELOG-delivery-media-fidelity.md`).
 
+## 0.32.1 — spec knowledge, wave 4: what a reviewing client had to guess
+
+Wave 4 of how clients use a spec's `stardust/spec/knowledge/`. A spec viewer that lets people review the spec
+inferred four facts with a model or recomputed them; the judgement now records them. All four fields are additive, so
+older judgement files still build (the fields read null).
+
+- **`open-questions.json` `default_option`:** the index of the option the default is, or null when the default mixes
+  or conditions options. A reviewer sees the default as a selected option without matching prose to labels. On a
+  sports-federation run, 23 of 28 defaults are one of their options. An index outside the options stops S10.
+- **`blocking` is defined:** confirm the default before launch, because a different answer means rework. The work
+  proceeds on the default either way; read as "work waits", it contradicted "every open question ships a default".
+- **`findings.json` `chapter` and `rank`:** where a finding belongs in the spec's story (`start`, `pages`, `build`,
+  `dynamic`, `risks`, `decide`) and its rank there, so a client places the agent's interpretation next to the numbers
+  it explains and leads with the most important one. An unknown chapter stops S10.
+- **`redirects.jsonl` `needs_entry`:** 1 on a `migration` row whose path changes beyond the `.html`, index-name and
+  trailing-slash rule. On the sports-federation run, 5,287 of 12,072 migration rows need their own entry. The
+  template's redirect finding counted all of them; it now counts `needs_entry=1`.
+- `templates/open-questions.json` gives every generic question a `default_option`; `templates/findings.json` shows
+  `chapter` and `rank`. Tests cover the four fields and the two stops.
+
 ## 0.32.0 — the header is a contract: its behaviour is recorded from the source and gated before done (#132)
 
 Field learning: several runs shipped headers that passed every pixel and style gate while every menu was wrong. They

@@ -18,7 +18,7 @@ fields, and clients ignore fields they do not know; removing or renaming one is 
 | `variants.json` | code, template_id, rank, label, core[], optional[], url_count, pageviews_90d, distinct_sets, rep_url, rep_capture_key |
 | `templates.json` | id, label, url_count, pageviews_90d, variant_count, top_variants_share, rep_url |
 | `source-components.json` | name, url_count, instance_count, maps_to {block: instances} |
-| `redirects.jsonl` | src, target, status, hops, kind (`legacy`: redirects today; `migration`: every changed delivered path, `.html` included), target_status, external, in_sitemap, inbound_pages, rum_views, note |
+| `redirects.jsonl` | src, target, status, hops, kind (`legacy`: redirects today; `migration`: every changed delivered path, `.html` included), needs_entry (`migration`: 1 when the path changes beyond the `.html`, index-name and trailing-slash rule; null on `legacy`), target_status, external, in_sitemap, inbound_pages, rum_views, note |
 | `broken.jsonl` | url, status, source (`sitemap` / `link` / `rum`), kind, in_scope, inbound_pages, inbound_main, rum_views, rum_bundles, referrers, note |
 | `bad-links.jsonl` | per dead or redirected target: `to_url`, `main[]` and `chrome[]` (url ids of the pages linking to it) |
 | `redirect-landings.json` | path, views, bundles |
@@ -31,8 +31,8 @@ fields, and clients ignore fields they do not know; removing or renaming one is 
 | `archetypes.json` | `cut`, `types[] {type, template, variant_codes[], rep_url, urls[], url_count}`: one page type per variant covering `cut` of its template |
 | `header.json` | `url`, `at`, `summary[]`: the header's size per width (controls, states, links, depth), from S9's header exploration |
 | `search-probes.json` | term, expect_count, expect_titles[], expect_includes, feature, path, param |
-| `open-questions.json` | id, area, owner (`stakeholder` / `implementer`), blocking, question, context, options[], default_assumption, impact_rule, impact, link, features[], answer {answer, option, by, at}, effective |
-| `findings.json` | `{ title, text, numbers[] }`, plain text, every number computed |
+| `open-questions.json` | id, area, owner (`stakeholder` / `implementer`), blocking (1: confirm the default before launch; a different answer means rework), question, context, options[], default_assumption, default_option (index of the option the default is, or null), impact_rule, impact, link, features[], answer {answer, option, by, at}, effective |
+| `findings.json` | `{ title, text, numbers[], chapter, rank }`, plain text, every number computed; chapter of the spec's story (`start`, `pages`, `build`, `dynamic`, `risks`, `decide`), rank 1 leads it |
 
 ## Rules
 
