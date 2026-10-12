@@ -1,5 +1,5 @@
 {
- "_about": "Generic open questions: copy the ones that apply into implementation.json#open_questions, make the context and default site-specific, add the site's own.",
+ "_about": "Generic open questions: copy the ones that apply into implementation.json#open_questions, make the context and default site-specific, add the site's own. default_option is the index of the option the default is, or null when the default is none of them (it mixes or conditions options); keep it true when you edit the default.",
  "questions": [
   {
    "id": "Q-SCOPE-1",
@@ -14,6 +14,7 @@
     "Archive (migrate with noindex)"
    ],
    "default": "Migrate all; flag them for a post-launch review.",
+   "default_option": 0,
    "impact": "urls live sitemap pageviews_90d=0",
    "link": "/urls?traffic=none"
   },
@@ -30,6 +31,7 @@
     "Build a simple index page"
    ],
    "default": "Redirect each to its first child or parent landing page.",
+   "default_option": 0,
    "impact": "urls sitemap flag=empty",
    "link": "/urls?flag=empty"
   },
@@ -46,6 +48,7 @@
     "Decide per page"
    ],
    "default": "In scope when they have traffic; otherwise redirect.",
+   "default_option": null,
    "impact": "urls live !sitemap",
    "link": "/urls?sitemap=0"
   },
@@ -61,6 +64,7 @@
     "Keep .html via CDN rewrite"
    ],
    "default": "EDS format with a .html rule plus explicit redirects.",
+   "default_option": 0,
    "impact": "count redirects kind=migration",
    "link": "/redirects?kind=migration"
   },
@@ -77,6 +81,7 @@
     "Leave as 404"
    ],
    "default": "The agent proposes the closest live page; unmatched ones stay 404.",
+   "default_option": 0,
    "impact": "count broken source=rum,sitemap",
    "link": "/broken"
   },
@@ -93,6 +98,7 @@
     "All trees at once"
    ],
    "default": "Scoped tree first; the code base is built locale-ready; trees follow by traffic.",
+   "default_option": 1,
    "impact": "sum locales.urls",
    "link": null
   },
@@ -110,6 +116,7 @@
     "Shared master tree with overrides"
    ],
    "default": "Copy at migration; trees become independent; translation via the stakeholder's vendor.",
+   "default_option": 0,
    "impact": "value:0",
    "link": null
   },
@@ -125,6 +132,7 @@
     "New property"
    ],
    "default": "Same property with a new environment for the EDS hosts, production switched at go-live.",
+   "default_option": 0,
    "impact": "count launch-rules",
    "link": null
   },
@@ -140,6 +148,7 @@
     "New schema + tag-manager update"
    ],
    "default": "Same schema, populated from page metadata and block events.",
+   "default_option": 0,
    "impact": "count datalayer",
    "link": null
   },
@@ -156,6 +165,7 @@
     "Retire expired campaigns first"
    ],
    "default": "The agent produces a rule-by-rule rewrite sheet; the analytics team applies it.",
+   "default_option": 1,
    "impact": "count launch-rules needs_rewrite=1",
    "link": null
   },
@@ -171,6 +181,7 @@
     "Through the tag manager"
    ],
    "default": "Direct load in head with the existing configuration; the tag manager gated by consent.",
+   "default_option": 0,
    "impact": "value:0",
    "link": null
   },
@@ -186,6 +197,7 @@
     "New suites for EDS staging"
    ],
    "default": "Unchanged in production; a staging suite for the EDS environment.",
+   "default_option": null,
    "impact": "value:0",
    "link": null
   },
@@ -201,6 +213,7 @@
     "Consolidate"
    ],
    "default": "Keep every page's form as authored.",
+   "default_option": 0,
    "impact": "value:0",
    "link": null
   },
@@ -217,6 +230,7 @@
     "Endpoint provided by the stakeholder"
    ],
    "default": "Rebuild the UI with submission disabled and contact details shown until the endpoint is decided.",
+   "default_option": null,
    "impact": "value:0",
    "link": null
   },
@@ -232,6 +246,7 @@
     "Move assets to EDS media"
    ],
    "default": "Keep the DAM delivery and author assets as links.",
+   "default_option": 0,
    "impact": "value:0",
    "link": null
   },
@@ -248,6 +263,7 @@
     "External storage + redirects"
    ],
    "default": "Keep them on the DAM delivery; redirect their paths if they move.",
+   "default_option": 0,
    "impact": "count broken kind=asset",
    "link": null
   },
@@ -263,6 +279,7 @@
     "External feed"
    ],
    "default": "A taxonomy sheet plus per-page metadata, seeded from the current tags.",
+   "default_option": 0,
    "impact": "value:0",
    "link": null
   },
@@ -278,6 +295,7 @@
     "Hosted search service"
    ],
    "default": "Query-index search with title-first ranking, checked against the recorded probe counts.",
+   "default_option": 0,
    "impact": "value:0",
    "link": null
   },
@@ -294,6 +312,7 @@
     "Retire"
    ],
    "default": "Snapshot as content where possible; apps wait for the source.",
+   "default_option": null,
    "impact": "count features reproducibility=needs-human-capture",
    "link": null
   },
@@ -309,6 +328,7 @@
     "Not now"
    ],
    "default": "Not in the like-for-like migration; listed as an improvement.",
+   "default_option": 1,
    "impact": "value:0",
    "link": null
   },
@@ -324,6 +344,7 @@
     "Adobe-managed CDN"
    ],
    "default": "Bring your own CDN with push invalidation.",
+   "default_option": 0,
    "impact": "value:0",
    "link": null
   },
@@ -339,6 +360,7 @@
     "EDS headers config"
    ],
    "default": "Carry the current headers over, adding the EDS hosts.",
+   "default_option": null,
    "impact": "value:0",
    "link": null
   },
@@ -354,6 +376,7 @@
     "Flatten into sections"
    ],
    "default": "Fragments, one per panel with nested blocks.",
+   "default_option": 0,
    "impact": "urls sitemap nested",
    "link": "/urls?nested=1"
   },
@@ -369,6 +392,7 @@
     "Consolidate"
    ],
    "default": "Pixel parity on archetypes; small differences consolidated with sign-off.",
+   "default_option": null,
    "impact": "value:0",
    "link": null
   }

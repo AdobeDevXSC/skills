@@ -48,7 +48,7 @@ start it, then write config and judgement scaffolding while it runs. One browser
 ## Judgement (S7, S9)
 
 Start from `templates/`. `mapping.json` and `catalog.json`: reference/judgement.md. `implementation.json`:
-reference/implementation.md. `findings.json`: 6–10 plain-text `{ title, text }` headlines. Recorded answers go in
+reference/implementation.md. `findings.json`: 6–10 plain-text `{ title, text, chapter, rank }` headlines. Recorded answers go in
 `judgement/answers.json`.
 
 ## Outputs
