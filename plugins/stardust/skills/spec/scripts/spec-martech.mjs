@@ -83,7 +83,7 @@ function pushEventsOf(b) {
     const at = m.index + m[0].length;
     if (b[at] !== '{') return null;
     const s = block(b, at);
-    const named = s.match(/(?:specificEvent|eventName|eventType|event)\s*:\s*"([^"]+)"/);
+    const named = s.match(/(?:specificEvent|eventKey|eventName|eventType|event)\s*:\s*"([^"]+)"/);
     if (named) return named[1];
     return /allEvents:(?:!0|true)/.test(s) ? '*' : null;
   }))];
