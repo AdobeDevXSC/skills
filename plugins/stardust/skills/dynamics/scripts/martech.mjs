@@ -200,7 +200,7 @@ function dataLayerHandoff({ rewrite: { library = null, dataLayer = [], dataLayer
   const pushed = read.rules.filter((r) => r.events.length);
   const paths = [...new Set([...dataLayerPaths, ...read.dataElements.map((d) => d.source).filter(Boolean)])];
   if (!dataLayer.length && !pushed.length && !tagManagers.length && !dataLayers.length) return [];
-  const unread = tagManagers.filter((t) => t !== library && !tagNotes[t]);
+  const unread = tagManagers.filter((t) => t !== library && !tagNotes[t] && !tagNotes[slug(t)]);
   const vendors = [...new Set(pushed.map((r) => r.vendor))];
   return [
     '', '## Data layer', '',
@@ -222,7 +222,9 @@ function tagNotesHandoff(notes = {}) {
   if (!free.length && !dropped) return [];
   return [
     '', '## Tag-manager notes (read by the model, not parsed)',
-    ...free.flatMap(([vendor, md]) => ['', `**${vendor}:** ${String(md).trim()}`]),
+    ...free.flatMap(([vendor, md]) => (Array.isArray(md)
+      ? ['', `**${vendor}:**`, ...md.map((m) => `- ${String(m).trim()}`)]
+      : ['', `**${vendor}:** ${String(md).trim()}`])),
     ...(dropped ? ['', `${dropped} \`tagNotes\` ${dropped === 1 ? 'entry' : 'entries'} without a name or a \`from\` citation ${dropped === 1 ? 'was' : 'were'} left out; add where in the library each was read.`] : []),
     '', 'Confirm everything read by the model against the owner\'s tagging plan.',
   ];

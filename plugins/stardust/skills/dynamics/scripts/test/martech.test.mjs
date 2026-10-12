@@ -218,5 +218,12 @@ check('other tag managers: a custom GTM data-layer name; tagNotes read in Launch
   assert.doesNotMatch(md, /were not parsed|uncited/);
   assert.equal(modelRead({ T: 'free text only' }).rules.length, 0);
 });
+check('tagNotes keyed by the route id (slug) count as read; array notes render as bullets', () => {
+  const c = buildContract({ dynamics: { pages: { '/': { host: 'www.example.com', scripts: [SCRIPTS.gtm] } } }, provenance: {} });
+  c.tagNotes['google-tag-manager'] = { rules: [], dataElements: [], notes: ['first note', 'second note'] };
+  const md = renderHandoff(c);
+  assert.doesNotMatch(md, /were not parsed/);
+  assert.match(md, /\*\*google-tag-manager:\*\*\n- first note\n- second note/);
+});
 if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }
 console.log('martech: all checks passed');
