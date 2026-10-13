@@ -32,6 +32,7 @@ inheritance (live copies / masters), hreflang presence, what changes per tree (s
 Fetch two to four trees fully (S2–S3 with another scopePath) when coverage of the block set across trees matters.
 
 ## open_questions[]
-Start from `templates/open-questions.json`; keep what applies, add site-specific ones. Each:
-`{ id, area, owner: "stakeholder" | "implementer", blocking, question, context, options[], default, impact, link }`.
+Start from `templates/open-questions.json`. Each:
+`{ id, area, owner: "stakeholder" | "implementer", blocking, question, context, options[], default, default_option, impact, link }`;
+`blocking` and `default_option` as in knowledge.md § Files.
 `impact`: a number rule (knowledge.md § Rules), e.g. `urls sitemap flag=empty`, or `value:<n>`.

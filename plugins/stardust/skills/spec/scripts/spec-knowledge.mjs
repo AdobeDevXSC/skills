@@ -107,6 +107,12 @@ export function offVocabulary(features, taxonomy) {
 }
 
 /** The latest recorded answer per question id, from judgement/answers.json. Pure. */
+/** A migration redirect needs its own entry when its path changes beyond dropping .html, an index name or a folder's
+ *  trailing slash (one rule covers those); a change of case, characters or place does not. */
+export const needsEntry = (src, target) => { const k = (p) => String(p).replace(/\.html$/, '').replace(/\/index$/, '').replace(/\/$/, ''); return k(src) !== k(target) ? 1 : 0; };
+/** The chapters of a spec's story a finding belongs to (reference/knowledge.md § findings.json). */
+export const CHAPTERS = ['start', 'pages', 'build', 'dynamic', 'risks', 'decide'];
+
 export function latestAnswers(list) {
   const out = {};
   for (const a of list || []) if (a && a.question) out[a.question] = { answer: a.answer ?? null, option: a.option ?? null, by: a.by ?? null, at: a.at ?? null };
@@ -223,10 +229,10 @@ async function main() {
     for (const [u, z] of Object.entries(r.links || {})) { if (!inbound.has(u)) { inbound.set(u, new Set()); inboundMain.set(u, new Set()); } inbound.get(u).add(r.url); if (z === 'main') inboundMain.get(u).add(r.url); }
   }
   const redirects = [];
-  const addRedirect = (r, inSm) => redirects.push({ src: r.url, target: r.final_url ?? null, status: r.status ?? null, hops: (r.chain || []).length, kind: 'legacy', target_status: r.final_status ?? null, external: r.external ? 1 : 0, in_sitemap: inSm, inbound_pages: inbound.get(r.url)?.size || 0, rum_views: Math.round(views[new URL(r.url).pathname]?.views || 0), note: /loop/.test(r.error || '') ? 'redirect loop' : null });
+  const addRedirect = (r, inSm) => redirects.push({ src: r.url, target: r.final_url ?? null, status: r.status ?? null, hops: (r.chain || []).length, kind: 'legacy', needs_entry: null, target_status: r.final_status ?? null, external: r.external ? 1 : 0, in_sitemap: inSm, inbound_pages: inbound.get(r.url)?.size || 0, rum_views: Math.round(views[new URL(r.url).pathname]?.views || 0), note: /loop/.test(r.error || '') ? 'redirect loop' : null });
   fetchRows.filter((r) => (r.chain || []).length).forEach((r) => addRedirect(r, sitemapUrls.has(r.url) ? 1 : 0));
   disc.filter((r) => (r.chain || []).length && !sitemapUrls.has(r.url)).forEach((r) => addRedirect(r, 0));
-  urls.filter((u) => u.needs_migration_redirect === 1).forEach((u) => redirects.push({ src: u.path, target: u.eds_path, status: 301, hops: 1, kind: 'migration', target_status: 200, external: 0, in_sitemap: 1, inbound_pages: inbound.get(u.url)?.size || 0, rum_views: Math.round(views[u.path]?.views || 0), note: 'EDS path normalisation' }));
+  urls.filter((u) => u.needs_migration_redirect === 1).forEach((u) => redirects.push({ src: u.path, target: u.eds_path, status: 301, hops: 1, kind: 'migration', needs_entry: needsEntry(u.path, u.eds_path), target_status: 200, external: 0, in_sitemap: 1, inbound_pages: inbound.get(u.url)?.size || 0, rum_views: Math.round(views[u.path]?.views || 0), note: 'EDS path normalisation' }));
   const redirectLandings = rum.available ? Object.entries(rum.redirectLandings || {}).map(([p, v]) => ({ path: p, views: Math.round(v.views), bundles: v.bundles })) : [];
   const inScope = (u) => { try { return new URL(u).pathname.startsWith(cfg.scopePath) ? 1 : 0; } catch { return 0; } };
   const broken = [];
@@ -329,13 +335,21 @@ async function main() {
     const rule = q.impact ?? q.impact_rule ?? null;
     if (rule && /^sql:/.test(rule)) throw new Error(`open question ${q.id}: sql: impact rules are retired — write it in the rule format (reference/knowledge.md § Rules)`);
     const a = answers[q.id] || null;
-    return { id: q.id, area: q.area, owner: q.owner, blocking: q.blocking ? 1 : 0, question: q.question, context: q.context, options: q.options || [], default_assumption: q.default,
+    const opts = q.options || []; const di = q.default_option ?? null;
+    if (di !== null && !(Number.isInteger(di) && di >= 0 && di < opts.length)) throw new Error(`open question ${q.id}: default_option ${JSON.stringify(di)} is not an index into its ${opts.length} options — or null when the default is none of them`);
+    return { id: q.id, area: q.area, owner: q.owner, blocking: q.blocking ? 1 : 0, question: q.question, context: q.context, options: opts, default_assumption: q.default, default_option: di,
       impact_rule: rule, impact: rule ? evalRule(K, rule) : null, link: q.link ?? null, features: featByQ[q.id] || [], answer: a, effective: a?.answer ?? q.default };
   });
   K.openQuestions = openQuestions;
 
-  // ---- findings: { title, text } with every {{rule}} computed
-  const findings = readJSON(J('findings.json'), []).map((f) => { const o = typeof f === 'string' ? { title: null, text: f } : f; const t = fillText(K, o.text); return { title: o.title ?? null, text: t.text, numbers: t.numbers }; });
+  // ---- findings: { title, text, chapter, rank } with every {{rule}} computed
+  const findings = readJSON(J('findings.json'), []).map((f) => {
+    const o = typeof f === 'string' ? { title: null, text: f } : f; const t = fillText(K, o.text);
+    const name = `finding "${o.title ?? String(o.text).slice(0, 40)}"`;
+    if (o.chapter != null && !CHAPTERS.includes(o.chapter)) throw new Error(`${name}: chapter ${JSON.stringify(o.chapter)} is not one of ${CHAPTERS.join(', ')}`);
+    if (o.rank != null && !(Number.isInteger(o.rank) && o.rank >= 1)) throw new Error(`${name}: rank must be 1 or more`);
+    return { title: o.title ?? null, text: t.text, numbers: t.numbers, chapter: o.chapter ?? null, rank: o.rank ?? null };
+  });
 
   // ---- site facts
   const src = {}; let arch = [];
