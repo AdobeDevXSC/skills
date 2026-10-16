@@ -171,10 +171,12 @@ check('readEvidence: a spec knowledge folder (martech.json#evidence) reads as th
   try {
     const launch = { rules: [{ name: 'r', consentGroups: ['C0002'], paths: [], selectors: [] }], dataElements: [] };
     const onetrust = [{ domainScript: 'abc', ruleSets: [] }];
+    const consentMode = { pages: 1, of: 2, libraries: [] };
     mkdirSync(join(dir, 'raw')); writeFileSync(join(dir, 'raw', 'launch.json'), JSON.stringify(launch)); writeFileSync(join(dir, 'raw', 'onetrust.json'), JSON.stringify(onetrust));
-    mkdirSync(join(dir, 'knowledge')); writeFileSync(join(dir, 'knowledge', 'martech.json'), JSON.stringify({ vendors: [], evidence: { launch, onetrust } }));
+    writeFileSync(join(dir, 'raw', 'consent-mode.json'), JSON.stringify(consentMode));
+    mkdirSync(join(dir, 'knowledge')); writeFileSync(join(dir, 'knowledge', 'martech.json'), JSON.stringify({ vendors: [], evidence: { launch, onetrust, consentMode } }));
     assert.deepEqual(readEvidence(join(dir, 'knowledge')), readEvidence(join(dir, 'raw')));
-    assert.deepEqual(readEvidence(join(dir, 'none')), { launch: null, onetrust: [] });
+    assert.deepEqual(readEvidence(join(dir, 'none')), { launch: null, onetrust: [], consentMode: null });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -188,6 +190,18 @@ check('data layer: any tag manager or data-layer global gets the section; unread
   assert.match(md, /add each push in the block that owns the interaction/);
   assert.doesNotMatch(renderHandoff(buildContract({ dynamics: { pages: { '/': { host: 'x.test', scripts: [] } } }, provenance: {} })), /## Data layer/);
   assert.doesNotMatch(renderHandoff(build([SCRIPTS.launch], { launch: SDK(DS), onetrust: [] })), /Rules in Adobe Launch were not read/);
+});
+check('Google Consent Mode: an inline consent default makes the model google-consent-mode; a library-only hint stays evidence', () => {
+  const d = { pages: { '/': { host: 'www.example.com', scripts: ['https://www.googletagmanager.com/gtm.js?id=GTM-TEST'] } } };
+  const inline = buildContract({ dynamics: d, provenance: {}, martech: { launch: null, onetrust: [], consentMode: { pages: 2, of: 3, libraries: [] } } });
+  assert.equal(inline.consent.model, 'google-consent-mode');
+  const md = renderHandoff(inline);
+  assert.match(md, /\*\*Model `google-consent-mode`:\*\* .*copy the inline consent default into `head\.html`/);
+  assert.match(md, /\*\*Google Consent Mode:\*\* inline `consent` default on 2 of 3 probed pages\./);
+  const lib = buildContract({ dynamics: d, provenance: {}, martech: { launch: null, onetrust: [], consentMode: { pages: 0, of: 3, libraries: ['tags/gtm.js'] } } });
+  assert.equal(lib.consent.model, 'owner-decision');
+  assert.match(renderHandoff(lib), /consent-mode calls in `tags\/gtm\.js`\. Check it with the owner before gating a route on a category\./);
+  assert.equal(buildContract({ dynamics: d, provenance: {} }).consent.consentMode, null);
 });
 check('other tag managers: a custom GTM data-layer name; tagNotes read in Launch shape render in the same sections', () => {
   const d = { pages: { '/': { host: 'www.example.com', scripts: ['https://www.googletagmanager.com/gtm.js?id=GTM-TEST&l=gtmDataLayer'] } } };
@@ -204,9 +218,10 @@ check('other tag managers: a custom GTM data-layer name; tagNotes read in Launch
   };
   const next = buildContract({ dynamics: d, provenance: {}, previous: first });
   assert.deepEqual(next.tagNotes, first.tagNotes);
-  assert.deepEqual([next.consent.model, next.consent.modelFrom], ['per-tag', 'tagNotes']);
+  assert.deepEqual([next.consent.model, next.consent.modelFrom], ['owner-decision', undefined], 'the model reading never changes the consent model');
   const md = renderHandoff(next);
-  assert.match(md, /\*\*Model `per-tag` \(read by the model, not parsed\):\*\*/);
+  assert.match(md, /\*\*Model `owner-decision`:\*\*/);
+  assert.match(md, /\*\*Consent checks read by the model \(evidence only; the model above comes from parsed evidence and does not change\):\*\*/);
   assert.match(md, /- Google Tag Manager rule GA4 add_to_cart checks `C0004` — read by the model at tags\/gtm\.js: trigger 12/);
   assert.match(md, /- Google Tag Manager rule Promo click — paths `\/offers\.html` — selectors `\.promo a` — read by the model at tags\/gtm\.js: trigger 7/);
   assert.match(md, /- Google Tag Manager data element DLV - product — selectors `h1\.title` — read by the model at tags\/gtm\.js: variable 3/);

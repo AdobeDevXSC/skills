@@ -17,7 +17,7 @@ const helpCheck = (script) => check(`${script} --help prints usage and writes no
   assert.equal(r.status, 0); assert.ok(r.stdout.includes(script), "usage names the script");
   assert.deepEqual(readdirSync(cwd), []); rmSync(cwd, { recursive: true });
 });
-import { parseLaunch, tagLibraries } from "../spec-martech.mjs";
+import { consentModeOf, parseLaunch, tagLibraries } from "../spec-martech.mjs";
 const js = `window._satellite.container={buildInfo:{minified:!0,buildDate:"2026-01-01T00:00:00Z"},dataElements:{"Page: Type":{modulePath:"ext-acdl/src/lib/dataElements/datalayerComputedState.js",settings:{path:"web.page.type"}},promoTitle:{defaultValue:"",modulePath:"core/src/lib/dataElements/customCode.js",settings:{source:function(){return $(".promo h2").text()}}}},extensions:{core:{displayName:"Core",hostedLibFilesBaseUrl:"x"}},rules:[{id:"RL1",name:"Event: Ads (BU) - page | Page View",events:[{modulePath:"core/src/lib/events/windowLoaded.js",settings:{}}],conditions:[{modulePath:"core/src/lib/conditions/path.js",settings:{paths:[{value:"/en/a.html"}]}}],actions:[{modulePath:"core/src/lib/actions/customCode.js",settings:{source:"https://assets.adobedtm.com/x/RC1-source.min.js"}}]},{id:"RL2",name:"Click",events:[{modulePath:"core/src/lib/events/click.js",settings:{elementSelector:".cta a"}}]}]};`;
 check("parse", () => { const l = parseLaunch(js); assert.deepEqual(l.extensions, ["Core"]); assert.equal(l.rules.length, 2); assert.deepEqual(l.rules[0].paths, ["/en/a.html"]); assert.deepEqual(l.rules[0].customCode, ["https://assets.adobedtm.com/x/RC1-source.min.js"]); assert.deepEqual(l.rules[1].selectors, [".cta a"]); const de = Object.fromEntries(l.dataElements.map((d) => [d.name, d])); assert.equal(de["Page: Type"].source, "web.page.type"); assert.deepEqual(de.promoTitle.selectors, [".promo h2"]); });
 check("parse: Adobe Target — the at.js extension; Web SDK rules that render decisions, with prehiding", () => {
@@ -54,6 +54,11 @@ check("tag libraries: GTM and gtag by container id, other tag managers by src, L
     { vendor: "Tealium", url: "https://tags.tiqcdn.com/utag/acme/main/prod/utag.js", file: "tags.tiqcdn.com-utag.js" },
     { vendor: "other", url: "https://nexus.ensighten.com/acme/Bootstrap.js", file: "nexus.ensighten.com-Bootstrap.js" },
   ]);
+});
+check("Google Consent Mode: pages with an inline default, libraries that set one; null when unseen", () => {
+  const tags = [{ file: "gtm-A.js", js: "x.setDefaultConsentState({ad_storage:'denied'})" }, { file: "utag.js", js: "nothing" }];
+  assert.deepEqual(consentModeOf([{ consentMode: true }, { consentMode: false }], tags), { pages: 1, of: 2, libraries: ["tags/gtm-A.js"] });
+  assert.equal(consentModeOf([{ consentMode: false }], [{ file: "utag.js", js: "nothing" }]), null);
 });
 helpCheck("spec-martech.mjs");
 

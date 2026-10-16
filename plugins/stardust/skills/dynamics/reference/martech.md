@@ -24,6 +24,8 @@ owner's accounts, so the scaffold writes everything disabled and the owner turns
 
 - **`per-tag`**: Launch rules carry consent groups; the tag manager loads ungated and gates its own
   tags. Leave every route `category` null.
+- **`google-consent-mode`**: the pages set a Google Consent Mode default inline; GTM loads ungated and
+  the CMP updates the state. Leave routes ungated and copy the default into `head.html` before the tag manager.
 - **`owner-decision`**: no gating seen inside the tag manager. Keep it ungated, or set a route
   `category` to a CMP group id (`C0002`) so that tag manager loads only once the group is granted.
 
@@ -45,15 +47,16 @@ are not parsed: `spec-martech.mjs` saves each library, listed in `martech/tags.j
 throwaway extractor in the work folder) into the contract's `tagNotes`, keyed by tag manager, in Launch's shape:
 `rules` (`name`, `paths`, `selectors`, `events`, `consentGroups`), `dataElements` (`name`, `selectors`, `source`) and
 free `notes`. Every entry cites where in the library it was read (`from`); uncited ones are dropped. Rebuild: they
-survive, render in the same sections as Launch's marked "read by the model", and the tagging plan still decides. Collector CNAMEs on the new host are an owner item.
+survive and render in the same sections as Launch's marked "read by the model" — evidence only, they never change the consent model. Collector CNAMEs on the new host are an owner item.
 
 ## Web SDK via `aem-martech` (owner switch)
 
 When the source runs the Launch Web SDK extension (or a page loads `alloy.js`), the contract gains
 `aemMartech`, off: orgId, datastream (or the candidates when a data element picks one), instance
 name, edge domain and the source's `defaultConsent` (the plugin defaults to `pending`). The hand-off
-gives the switch steps. Once `aemMartech.enabled`, the scaffold loads Web SDK eagerly after the CMP
-and the Launch property from `martechDelayed()`. The scaffold refuses an empty orgId, datastream or
+gives the switch steps. Once `aemMartech.enabled`, the scaffold loads Web SDK eagerly after the CMP,
+sends from `loadLazy()` after the footer, and loads the Launch property from `martechDelayed()`. A
+category starts the SDK `pending` and grants `collect` once the CMP grants it. The scaffold refuses an empty orgId, datastream or
 consent, a missing `plugins/martech`, or an enabled `adobe-launch` route for the same property.
 
 Target (at.js, or Web SDK rules that render decisions) becomes `target`, off. Once `target.enabled`,

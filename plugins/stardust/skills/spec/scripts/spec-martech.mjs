@@ -10,7 +10,7 @@
  *   node spec-martech.mjs --urls <url,url,...> [--out stardust/martech] [--no-custom-code] [--no-tag-libraries]
  *
  * Writes <work>/martech/headers.json, vendors.json, launch.json (+ launch.js, rc/ for custom code), onetrust.json,
- * tags.json (+ tags/ with each other tag-manager library).
+ * tags.json (+ tags/ with each other tag-manager library), consent-mode.json (Google Consent Mode defaults, when seen).
  * --urls runs without a spec: the first URL is the origin's home, each URL's server HTML gives its page signals.
  * Everything read here is public (what any browser downloads); no credential is used.
  */
@@ -140,6 +140,16 @@ export function tagLibraries(sigs, vendorFor) {
   return [...urls].slice(0, 10).map(([url, vendor]) => ({ vendor, url, file: `${new URL(url).hostname}-${(new URL(url).pathname.split('/').pop() || 'tag').replace(/\.js$/, '')}${new URL(url).searchParams.get('id') ? `-${new URL(url).searchParams.get('id')}` : ''}.js` }));
 }
 
+/**
+ * Google Consent Mode, deterministic: pages whose inline scripts set a `consent` `default` (spec-parse), and saved
+ * libraries that call it (`gtag('consent','default'…)` or a template's `setDefaultConsentState`). Null when unseen. Pure.
+ */
+export function consentModeOf(sigs, tags = []) {
+  const pages = sigs.filter((s) => s.consentMode).length;
+  const libraries = tags.filter((t) => /['"]consent['"]\s*,\s*['"]default['"]|setDefaultConsentState/.test(t.js || '')).map((t) => `tags/${t.file}`);
+  return pages || libraries.length ? { pages, of: sigs.length, libraries } : null;
+}
+
 async function sources() {
   const urls = list(arg('urls'));
   if (!urls.length) {
@@ -200,6 +210,8 @@ async function main() {
     tags.forEach((t) => writeFileSync(join(out, 'tags', t.file), t.js));
     writeJSON(join(out, 'tags.json'), tags.map(({ vendor, url, file, js }) => ({ vendor, url, file: `tags/${file}`, bytes: js.length })));
   }
+  const consentMode = consentModeOf(sigs, tags);
+  if (consentMode) writeJSON(join(out, 'consent-mode.json'), consentMode);
   // OneTrust: domain scripts from pages or Launch custom code
   const otIds = new Set();
   sigs.forEach((s) => (s.otDomainScripts || []).filter((x) => !x.endsWith('-test')).forEach((x) => otIds.add(x)));

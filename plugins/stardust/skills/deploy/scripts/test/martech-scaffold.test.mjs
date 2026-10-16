@@ -15,6 +15,12 @@ const SCRIPTS = `async function loadEager(doc) {
   document.documentElement.lang = 'en';
 }
 
+async function loadLazy(doc) {
+  loadHeader(doc.querySelector('header'));
+  loadFooter(doc.querySelector('footer'));
+  loadFonts();
+}
+
 function loadDelayed() {
   // eslint-disable-next-line import/no-cycle
   window.setTimeout(() => import('./delayed.js'), 3000);
@@ -63,6 +69,7 @@ await check('writes martech.js with enabled routes only, hooks loadEager + delay
   assert.ok(!js.includes('"'), 'config is emitted with single quotes');
   assert.match(file(root, 'scripts/scripts.js'), /function loadEager\(doc\) \{\n {2}import\('\.\/martech\.js'\)\.then\(\(m\) => m\.loadConsent\(\)\);/);
   assert.match(file(root, 'scripts/delayed.js'), /m\.loadTags\(\)/);
+  assert.ok(!file(root, 'scripts/scripts.js').includes('loadAnalytics'), 'no lazy hook without aemMartech');
   const again = run(root);
   assert.equal(again.status, 0);
   assert.match(again.stdout, /unchanged/);
@@ -100,7 +107,7 @@ await check('invalid contract: enabled CMP without its id, or a category the CMP
 
 const SITE = site();
 run(SITE);
-async function boot({ host = 'main--site--org.aem.page', search = '', groups, root = SITE } = {}) {
+async function boot({ host = 'main--site--org.aem.page', search = '', groups, root = SITE, delayed = true } = {}) {
   const added = [];
   const listeners = {};
   globalThis.window = {
@@ -116,7 +123,8 @@ async function boot({ host = 'main--site--org.aem.page', search = '', groups, ro
   seq += 1;
   const m = await import(`${pathToFileURL(join(root, 'scripts/martech.js')).href}?${seq}`);
   m.loadConsent();
-  m.loadTags();
+  m.loadAnalytics();
+  if (delayed) m.loadTags();
   return { win: globalThis.window, srcs: () => added.map((s) => s.src), added, fire: () => listeners.OneTrustGroupsUpdated?.() };
 }
 
@@ -206,12 +214,33 @@ await check('runtime: aemMartech inits the Web SDK with the source consent, then
   assert.deepEqual(rest.map((c) => c[0]), ['eager', 'lazy', 'delayed']);
 });
 
-await check('runtime: an aemMartech category sets collect only once the CMP grants it', async () => {
-  const root = amSite(AM({ category: 'C0002', config: { ...AM().config, defaultConsent: 'pending' } }));
+await check('aemMartech: loadAnalytics is hooked into loadLazy after loadFooter; re-run is unchanged; no loadLazy is an error', () => {
+  const root = amSite(AM());
+  assert.equal(run(root).status, 0);
+  assert.match(file(root, 'scripts/scripts.js'), /\n {2}loadFooter\(doc\.querySelector\('footer'\)\);\n {2}import\('\.\/martech\.js'\)\.then\(\(m\) => m\.loadAnalytics\(\)\);\n {2}loadFonts\(\);/);
+  assert.match(run(root).stdout, /unchanged/);
+  const noLazy = amSite(AM());
+  writeFileSync(join(noLazy, 'scripts/scripts.js'), SCRIPTS.replace(/async function loadLazy[\s\S]*?\n}\n/, ''));
+  const r = run(noLazy);
+  assert.equal(r.status, 1); assert.match(r.stderr, /no loadLazy\(\)/);
+});
+
+await check('runtime: aemMartech sends from the lazy phase, before (and without) the delayed phase', async () => {
+  const root = amSite(AM());
+  assert.equal(run(root).status, 0);
+  globalThis.martechCalls = [];
+  await boot({ root, search: '?martech=on', delayed: false });
+  await new Promise((done) => { setTimeout(done, 20); });
+  assert.deepEqual(globalThis.martechCalls.map((c) => c[0]), ['init', 'eager', 'lazy']);
+});
+
+await check('runtime: an aemMartech category starts the Web SDK pending (whatever the source value) and sets collect only once the CMP grants it', async () => {
+  const root = amSite(AM({ category: 'C0002' }));
   assert.equal(run(root).status, 0);
   globalThis.martechCalls = [];
   const b = await boot({ root, host: 'www.example.test', groups: ',C0001,' });
   await new Promise((done) => { setTimeout(done, 20); });
+  assert.equal(globalThis.martechCalls[0][1].defaultConsent, 'pending');
   assert.ok(!globalThis.martechCalls.some((c) => c[0] === 'consent'));
   b.win.OnetrustActiveGroups = ',C0001,C0002,';
   b.fire();

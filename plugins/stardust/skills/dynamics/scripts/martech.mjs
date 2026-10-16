@@ -14,19 +14,22 @@ import { readJSON, registrable, slug, vendors } from './lib.mjs';
 
 const hostOf = (u) => { try { return new URL(u).host; } catch { return ''; } };
 
-/** spec-martech evidence: its raw folder (launch.json, onetrust.json) or a spec's knowledge (martech.json#evidence). */
+/** spec-martech evidence: its raw folder (launch.json, onetrust.json, consent-mode.json) or a spec's knowledge (martech.json#evidence). */
 export function readEvidence(dir) {
   const read = (f) => (existsSync(join(dir, f)) ? readJSON(join(dir, f)) : null);
   const knowledge = read('martech.json')?.evidence;
-  if (knowledge) return { launch: knowledge.launch || null, onetrust: knowledge.onetrust || [] };
-  return { launch: read('launch.json'), onetrust: read('onetrust.json') || [] };
+  if (knowledge) return { launch: knowledge.launch || null, onetrust: knowledge.onetrust || [], consentMode: knowledge.consentMode || null };
+  return { launch: read('launch.json'), onetrust: read('onetrust.json') || [], consentMode: read('consent-mode.json') };
 }
 
-function consentOf(row, scripts, { launch, onetrust }, ruleSet) {
-  const model = (launch?.rules || []).some((r) => r.consentGroups?.length) ? 'per-tag' : 'owner-decision';
+/** Parsed evidence only: Launch rule consent groups, else a Google Consent Mode default on the pages. Never the model's reading. */
+function consentOf(row, scripts, { launch, onetrust, consentMode = null }, ruleSet) {
+  const model = (launch?.rules || []).some((r) => r.consentGroups?.length) ? 'per-tag'
+    : consentMode?.pages ? 'google-consent-mode' : 'owner-decision';
   const categories = (ruleSet?.groups || []).map(({ id, name, status }) => ({ id, name, status }));
   const ruleSets = onetrust[0]?.ruleSets?.length || 0;
-  if (!row) return { cmp: null, model, categories, ruleSets };
+  const gcm = consentMode && (consentMode.pages || consentMode.libraries?.length) ? consentMode : null;
+  if (!row) return { cmp: null, model, categories, ruleSets, consentMode: gcm };
   const { src, idAttr, idFrom, groups = null, event = null } = row.cmp;
   const id = (/OneTrust/.test(row.role) && onetrust[0]?.domainScript)
     || (idFrom && scripts.map((s) => s.match(new RegExp(idFrom))?.[1]).find(Boolean)) || null;
@@ -35,7 +38,7 @@ function consentOf(row, scripts, { launch, onetrust }, ruleSet) {
       vendor: row.role.replace(/^consent: /, ''), src, attrs: { [idAttr]: id }, groups, event,
       viaTagManager: (launch?.rules || []).some((r) => r.otDomainScripts?.length), enabled: false,
     },
-    model, categories, ruleSets,
+    model, categories, ruleSets, consentMode: gcm,
   };
 }
 
@@ -127,8 +130,6 @@ function keepOwnerChoices(contract, previous) {
   }
   if (contract.target && previous.target) contract.target.enabled = !!previous.target.enabled;
   contract.tagNotes = { ...previous.tagNotes };
-  const read = modelRead(contract.tagNotes);
-  if (contract.consent.model === 'owner-decision' && read.rules.some((r) => r.consentGroups.length)) Object.assign(contract.consent, { model: 'per-tag', modelFrom: 'tagNotes' });
   return contract;
 }
 
@@ -181,12 +182,13 @@ export function buildContract({ dynamics, martech = { launch: null, onetrust: []
 
 const MODEL = {
   'per-tag': 'the source loads the tag manager ungated and gates each tag inside it by consent group. Keep it: leave every route `category` null.',
+  'google-consent-mode': 'the source sets Google Consent Mode defaults inline (`gtag(\'consent\', \'default\', …)`), loads Google Tag Manager ungated, and the CMP updates the consent state; Google tags adapt to it. Keep it: leave every route `category` null (gating GTM on a category would drop its cookieless pings), and copy the inline consent default into `head.html` ahead of the tag manager — without it Google tags run with no default.',
   'owner-decision': 'no evidence of consent gating inside the tag manager. Keep the source behaviour (route `category` null), or set a route `category` to a consent group id to load that tag manager only once the group is granted.',
 };
 
+const BY_MODEL = ' (read by the model, not parsed)';
 const evName = (e) => (e === '*' ? 'any push' : e ? `\`${e}\`` : 'an event the rule settings do not name');
 
-const BY_MODEL = ' (read by the model, not parsed)';
 const where = (r) => `${r.paths.length ? ` — paths ${r.paths.map((p) => `\`${p}\``).join(', ')}` : ''}${r.selectors.length ? ` — selectors ${r.selectors.map((s) => `\`${s}\``).join(', ')}` : ''}`;
 const cite = (r) => ` — read by the model at ${r.from}`;
 const eventsLine = (who, rules) => {
@@ -240,7 +242,7 @@ function webSdkHandoff(a) {
     '',
     `- **orgId:** ${val(k.orgId)} · **instance:** \`${k.alloyInstanceName}\` · **edge domain:** ${val(k.edgeDomain)}`,
     `- **datastreamId:** ${k.datastreamId ? `\`${k.datastreamId}\`` : a.candidates.datastreamId.length ? `the Launch data element picks one of ${a.candidates.datastreamId.map((d) => `\`${d}\``).join(', ')} at runtime — choose one` : val(null)}`,
-    `- **defaultConsent:** source ${k.defaultConsent ? `\`${k.defaultConsent}\`` : 'unknown'}; the plugin defaults to \`pending\` and sends nothing until \`updateUserConsent\`. Keep the source value to keep its consent model.`,
+    `- **defaultConsent:** source ${k.defaultConsent ? `\`${k.defaultConsent}\`` : 'unknown'}; the plugin defaults to \`pending\` and sends nothing until \`updateUserConsent\`. With \`aemMartech.category\` set, the scaffold starts the SDK \`pending\` whatever this value and grants \`collect\` once the CMP grants that group; without a category, this value applies as is. Launch rules that call \`setConsent\` on the source are not read — set the category to keep a consent gate.`,
     ...(a.missingExtensions.length ? [`- **Missing Launch extension:** ${a.missingExtensions.join(', ')} — the plugin requires it.`] : []),
     '',
     'To switch: (1) `git subtree add --squash --prefix ' + `${a.plugin.path} ${a.plugin.repo} main\`; (2) in Launch, set the Web SDK extension to the self-hosted build with the same instance name and publish — otherwise the SDK loads twice; (3) set \`aemMartech.enabled\` and leave the \`adobe-launch\` route disabled (the plugin loads \`launchUrls\`); (4) re-run the scaffold.`,
@@ -259,8 +261,9 @@ function targetHandoff(t) {
 }
 
 export function renderHandoff(c) {
-  const { cmp, model, categories, ruleSets, modelFrom } = c.consent;
+  const { cmp, model, categories, ruleSets, consentMode: gcm = null } = c.consent;
   const read = modelRead(c.tagNotes);
+  const gated = read.rules.filter((r) => r.consentGroups.length);
   const rewrites = read.rules.filter((r) => r.paths.length || r.selectors.length);
   const readEls = read.dataElements.filter((d) => d.selectors.length);
   const id = cmp && Object.entries(cmp.attrs)[0];
@@ -273,8 +276,9 @@ export function renderHandoff(c) {
     '',
     `- **CMP:** ${cmp ? `${cmp.vendor} · \`${id[0]}\` = ${id[1] ? `\`${id[1]}\`` : '**not found — copy it from the CMP admin into the contract**'}` : 'none detected'}`,
     ...(cmp?.viaTagManager ? ['- **The tag manager injects the CMP on the source.** Leave `consent.cmp` disabled unless you remove that rule; enabling both loads it twice.'] : []),
-    `- **Model \`${model}\`${modelFrom ? BY_MODEL : ''}:** ${MODEL[model]}`,
-    ...read.rules.filter((r) => r.consentGroups.length).map((r) => `  - ${r.vendor} rule ${r.name} checks ${r.consentGroups.map((g) => `\`${g}\``).join(', ')}${cite(r)}`),
+    `- **Model \`${model}\`:** ${MODEL[model]}`,
+    ...(gcm ? [`- **Google Consent Mode:** ${[gcm.pages ? `inline \`consent\` default on ${gcm.pages} of ${gcm.of} probed pages` : '', gcm.libraries?.length ? `consent-mode calls in ${gcm.libraries.map((f) => `\`${f}\``).join(', ')}` : ''].filter(Boolean).join('; ')}.${model === 'google-consent-mode' ? '' : ' Check it with the owner before gating a route on a category.'}`] : []),
+    ...(gated.length ? [`- **Consent checks read by the model (evidence only; the model above comes from parsed evidence and does not change):** confirm each with the owner before choosing route categories.`, ...gated.map((r) => `  - ${r.vendor} rule ${r.name} checks ${r.consentGroups.map((g) => `\`${g}\``).join(', ')}${cite(r)}`)] : []),
     categories.length ? `- **Categories** (default rule set${ruleSets > 1 ? ` of ${ruleSets} geo rule sets — the CMP applies them, nothing to port` : ''}): ${categories.map((g) => `\`${g.id}\` ${g.name} (${g.status})`).join(' · ')}` : '- **Categories:** no CMP configuration read — run `spec-martech.mjs` first, or decide categories with the owner.',
     '',
     '## Routes',
