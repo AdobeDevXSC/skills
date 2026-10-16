@@ -39,8 +39,9 @@ root carries the `placeholder` / `aria-label` / `title` values and the icons.
 
 ```bash
 # Prereq 0: playwright importable from the project root (node -e "import('playwright')"), else
-# npm i -D playwright pixelmatch pngjs cheerio --legacy-peer-deps, never --no-save (extract
-# SKILL.md § Setup). Run the copied scripts from the project root: ESM resolves from the script.
+# npm i -D playwright pixelmatch pngjs cheerio --legacy-peer-deps
+# (never --no-save; extract SKILL.md § Setup). Run the copied scripts from the project
+# root: ESM resolves from the script.
 # Copy the WHOLE skills/diff/scripts/ dir: content-diff imports its local diff-profiles.mjs
 # AND content-inventory.mjs (deploy keeps its own synced copies for #93/#94).
 # Prereq: a RENDERABLE source. Static → serve from its own dir (python3 -m http.server).

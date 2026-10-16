@@ -289,6 +289,7 @@ async function main() {
   const ven = readJSON(W('martech', 'vendors.json'), { vendors: [] });
   const launch = readJSON(W('martech', 'launch.json'), null);
   const ot = readJSON(W('martech', 'onetrust.json'), []);
+  const consentMode = readJSON(W('martech', 'consent-mode.json'), null);
   const otGroup = {}; ot.forEach((d) => d.ruleSets.forEach((rs) => rs.groups.forEach((g) => g.hosts.forEach((h) => { otGroup[h.replace(/^\./, '')] = otGroup[h.replace(/^\./, '')] || `${g.id} ${g.name}`; }))));
   const base = (h) => h.split('.').slice(-2).join('.');
   const launchHosts = {}; (launch?.rules || []).forEach((r) => (r.loads || []).forEach((h) => { launchHosts[h] = (launchHosts[h] || 0) + 1; }));
@@ -375,7 +376,7 @@ async function main() {
   writeJSONL(OUT('redirects.jsonl'), redirects); writeJSONL(OUT('broken.jsonl'), broken); writeJSONL(OUT('bad-links.jsonl'), badLinks); writeJSON(OUT('redirect-landings.json'), redirectLandings);
   writeJSON(OUT('features.json'), features);
   // evidence: spec-martech's own files, unchanged, so the dynamics martech contract builds from knowledge alone
-  writeJSON(OUT('martech.json'), { consent_summary: impl.consent_summary || null, loading_order: impl.loading_order || null, vendors, launch_rules: launchRules, datalayer, evidence: { launch, onetrust: ot } });
+  writeJSON(OUT('martech.json'), { consent_summary: impl.consent_summary || null, loading_order: impl.loading_order || null, vendors, launch_rules: launchRules, datalayer, evidence: { launch, onetrust: ot, consentMode } });
   writeJSON(OUT('metadata.json'), metadata); writeJSON(OUT('query-indexes.json'), queryIndexes);
   if (queryIndexes.length) writeText(OUT('helix-query.yaml'), ['version: 1', 'indices:', ...queryIndexes.map((q) => q.yaml)].join('\n')); writeJSON(OUT('locales.json'), locales); writeJSON(OUT('site-config.json'), siteConfig);
   writeJSON(OUT('archetypes.json'), archetypes(urls, variantRows));

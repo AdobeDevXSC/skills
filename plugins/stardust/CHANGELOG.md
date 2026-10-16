@@ -4,6 +4,44 @@ This file starts at 0.14.0. Prior versions (0.3.0 – 0.13.1) are documented in
 git history only (plus the branch-scoped notes in
 `CHANGELOG-redesign-adobecom.md` and `CHANGELOG-delivery-media-fidelity.md`).
 
+## 0.33.0 — martech: the source's Web SDK is read and offered as an `aem-martech` switch, off
+
+Field learning: a full run on a consumer-brand site on Launch + Web SDK carried the tag stack over, but
+the hand-off only said "aem-martech is an owner project". It gave the owner nothing to act on. The Launch library
+already held everything the plugin needs: orgId, the Web SDK instance, edge CNAME, datastreams (two, chosen
+by a data element per brand domain), and a self-hostable 2.34.2 extension. It also showed 129 data-layer rules
+that only fire if the new pages push the same events. None of it was read.
+
+- **`spec-martech.mjs`** reads the Launch orgId and the Web SDK extension: version, self-hosted support, library
+  type, and each instance's edge domain, `defaultConsent` and datastream ids (resolving a `%data element%` to the
+  ids it holds). Rules now record their event types.
+- **`vendors.json`** gains a Web SDK row (`adoberesources.net`, `alloy.js`) carrying the `aem-martech` plugin
+  facts: repo, path, default edge, the source's default consent, required Launch extensions.
+- **`martech-contract.json`** gains `aemMartech`, always `enabled: false`. Its config comes from that evidence.
+  Ambiguous datastreams stay null, with the candidates listed. A rebuild keeps the owner's choices.
+- **`martech-handoff.md`** adds a data-layer section for any tag manager: the data-layer globals to keep, Launch
+  rules with their push events and a count per event, the tag managers whose rules were not parsed, and a request for
+  the owner's tagging plan. `spec-martech.mjs` saves every other tag-manager library (GTM and gtag by container id,
+  read from inline snippets; Tealium, Ensighten, ... by src) to `martech/tags/`; the model reads them into the
+  contract's `tagNotes` in Launch's shape (rules, data elements, consent groups, each citing `from`), which survive a
+  rebuild and render in the same rewrite, data-layer and consent sections, marked as read by the model. The consent
+  model comes from parsed evidence only; the model's reading is listed as evidence and never changes it. A Google
+  Consent Mode default (inline `gtag('consent', 'default', …)`, or a saved library that sets one) is saved to
+  `martech/consent-mode.json`; inline on the pages, it makes the model `google-consent-mode`. A custom GTM data-layer name
+  (`l=`) is kept. Its header adds `dynamics-check.mjs` after the scaffold re-run. It also adds a Web SDK
+  section: the values found, the consent default to keep (`in` on the source, `pending` in the plugin), missing extensions, and the four switch steps.
+- **`martech-scaffold.mjs`**: with `aemMartech.enabled`, it loads the CMP, then `initMartech`/`martechEager`;
+  `martechLazy` runs from `loadLazy()` after `loadFooter`, as the plugin documents, so page views do not wait for
+  the delayed phase; `martechDelayed` loads the Launch property through `launchUrls`. A category starts the Web SDK
+  `pending` whatever the source value and grants `collect` on consent.
+  The scaffold refuses missing values, a missing `plugins/martech`, or the same property also enabled as a route.
+  Off, the output is unchanged byte for byte.
+- **Target** is read the same way: the at.js extension (or a page-level at.js) and the Web SDK rules that render
+  decisions. The contract gains `target`, off, and the hand-off a Personalization section. With `target.enabled`,
+  the scaffold sets `personalization`, only on top of `aemMartech`. at.js activities stay an owner move.
+- **`dynamics-check`** treats the edge host as a route: forbidden on `/`, gated with a category, and expected on
+  accept once enabled.
+
 ## 0.32.1 — spec knowledge, wave 4: what a reviewing client had to guess
 
 Wave 4 of how clients use a spec's `stardust/spec/knowledge/`. A spec viewer that lets people review the spec
